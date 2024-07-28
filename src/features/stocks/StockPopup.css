@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.stock-popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.popup-content {
+  @apply bg-c-dark;
+  @apply text-c-white;
+  padding: 20px;
+  border-radius: 10px;
+  width: 80%;
+  max-width: 1200px;
+  text-align: center;
+  position: relative;
+  /*z-index: 1001;*/
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Center children horizontally */
+  justify-content: center; /* Center children vertically */
+}
+
+.content-container {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.stock-details {
+  flex: 0 0 60%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.stock-graph {
+  flex: 0 0 40%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stock-graph > div {
+  width: 100%;
+  height: 100%;
+}
+
+.close-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.popup-stock-icon {
+  width: 300px;
+  height: 300px;
+  object-fit: contain;
+  margin-bottom: 20px;
+  align-self: center;
+  filter: drop-shadow(0 0 1px white);
+}
+
+.popup-actions {
+  margin-top: 20px;
+}
+
+.buy-button, 
+.sell-button, 
+.create-buy-order-button, 
+.create-sell-order-button {
+  padding: 10px 20px;
+  margin: 5px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.buy-button:hover, 
+.sell-button:hover, 
+.create-buy-order-button:hover, 
+.create-sell-order-button:hover {
+  font-weight: 700;
+}
+
+.sell-button:disabled,
+.buy-button:disabled,
+.create-sell-order-button:disabled,
+.create-buy-order-button:disabled {
+  background-color: grey;
+  cursor: not-allowed;
+}
+
+.buy-button {
+  background-color: green;
+  color: white;
+}
+
+.sell-button {
+  background-color: red;
+  color: white;
+}
+
+.create-buy-order-button {
+  background-color: #329632;
+  color: white;
+}
+
+.create-sell-order-button {
+  background-color: #963232;
+  color: white;
+}
+

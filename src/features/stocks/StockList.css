@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.stock-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  padding: 16px;
+}
+
+.stock-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid #000000;
+  border-radius: 8px;
+  padding: 16px;
+  width: 200px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  @apply bg-c-dark;
+}
+
+.stock-icon {
+  width: 100%;
+  height: 125px;
+  object-fit: contain;
+  border-bottom: 1px solid #ccc;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 0 1px white);
+}
+
+.stock-ticker {
+  font-weight: bold;
+  margin-bottom: 8px;
+  @apply text-c-white;
+}
+
+.stock-ticker:hover {
+  font-weight: 800;
+  @apply text-c-dark-white;
+}
+
+.stock-prices {
+  display: flex;
+  justify-content: space-between;
+  width: 90%;
+  font-weight: bold;
+  align-items: center;
+}
+
+.buy-price,
+.sell-price {
+  text-align: center;
+}
+
+.buy-price {
+  color: green;
+}
+
+.sell-price {
+  color: red;
+}
+
+.blurred {
+  filter: blur(3px);
+  pointer-events: none; /* Prevent interactions with blurred content */
+}
+
+.sort-dropdown {
+  padding: 10px;
+  @apply bg-c-dark;
+  @apply text-c-white;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  width: 230px;
+  margin-top: 5px;
+  margin-right: 5px;
+  cursor: pointer;
+}
+

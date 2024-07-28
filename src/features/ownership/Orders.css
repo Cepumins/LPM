@@ -1,0 +1,49 @@
+.orders-container {
+  padding: 20px;
+}
+
+.flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.search-bar input {
+  padding: 5px;
+  margin-right: 10px;
+}
+
+.sort-dropdown {
+  display: flex;
+  align-items: center;
+}
+
+.sort-dropdown label {
+  margin-right: 5px;
+}
+
+.orders-list {
+  margin-top: 20px;
+}
+
+.order-headers {
+  display: flex;
+  font-weight: bold;
+}
+
+.order-header {
+  flex: 1;
+  padding: 10px;
+  border-bottom: 2px solid #ddd;
+  cursor: pointer;
+}
+
+.order-item {
+  display: flex;
+  padding: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.order-stock, .order-action, .order-quantity, .order-price, .order-date {
+  flex: 1;
+}

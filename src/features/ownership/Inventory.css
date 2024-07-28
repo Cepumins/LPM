@@ -1,0 +1,55 @@
+.inventory-container {
+  margin: 0 auto;
+  
+}
+
+.inventory-list {
+  max-width: 1200px;
+  min-width: fit-content;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+}
+
+.inventory-item {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  width: calc(33.333% - 20px);
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.inventory-stock-icon {
+  width: 40px;
+  height: 40px;
+  margin-right: 10px;
+}
+
+.inventory-stock-details {
+  display: flex;
+  flex-direction: column;
+  min-width: fit-content;
+}
+
+.inventory-stock-ticker {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.inventory-stock-quantity, .inventory-stock-prices {
+  font-size: 14px;
+}
+
+.inventory-stock-prices {
+  display: flex;
+  justify-content: space-between;
+}
+
+.inventory-stock-bid, .inventory-stock-ask {
+  margin-right: 10px;
+}
