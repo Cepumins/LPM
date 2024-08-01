@@ -37,7 +37,7 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
             message.data.forEach(updatedStock => {
               const index = updatedStocks.findIndex(stock => stock.ticker === updatedStock.ticker);
               if (index !== -1) {
-                console.log(`ARRAY: ${updatedStock.ticker} new buy: ${updatedStock.buyP} and sell: ${updatedStock.sellP}`);
+                //console.log(`ARRAY: ${updatedStock.ticker} new buy: ${updatedStock.buyP} and sell: ${updatedStock.sellP}`);
                 updatedStocks[index] = { ...updatedStocks[index], ...updatedStock };
               }
             });
@@ -48,7 +48,7 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
             const updatedStocks = [...prevStocks];
             const index = updatedStocks.findIndex(stock => stock.ticker === message.data.ticker);
             if (index !== -1) {
-              console.log(`OBJECT: ${message.data.ticker} new sell: ${message.data.sellP} and buy: ${message.data.buyP}`);
+              //console.log(`OBJECT: ${message.data.ticker} new sell: ${message.data.sellP} and buy: ${message.data.buyP}`);
 
               updatedStocks[index] = { ...updatedStocks[index], ...message.data };
               if (selectedStock && updatedStocks[index].ticker === selectedStock.ticker) {
@@ -77,7 +77,7 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
   */
 
   const handleStockClick = (stock) => {
-    //console.log(`Stock clicked: ${stock.ticker}`);
+    console.log(`Stock clicked: ${stock.ticker}`);
     setSelectedStock(stock);
   };
 
@@ -108,7 +108,7 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
   };
 
   const sortStocks = (option, fetchedStocks = stocks) => {
-    console.log(`sorting to ${option}`);
+    //console.log(`sorting to ${option}`);
     let sortedStocks = [...fetchedStocks];
   
     const sortFunction = (a, b, key, ascending = true) => {

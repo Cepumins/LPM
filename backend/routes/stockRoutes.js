@@ -6,6 +6,7 @@ const { parse } = require('json2csv');
 const http = require('http');
 const { getWebSocketServer } = require('./websocket'); // Import the WebSocket getter function
 const { readCSV, writeCSV } = require('./csvUtils'); // Import the CSV utility functions
+const e = require('cors');
 
 const router = express.Router();
 
@@ -1216,14 +1217,14 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
         // user is buying, LP is selling
         // we need to instantly remove old sellOrder and create new one
         // but the buyOrder should be updated after 3 mins
-        await removeOrder(ticker, 'sell', 1, stock.sellP, `LP-${ticker}`, true);
+        //await removeOrder(ticker, 'sell', 1, stock.sellP, `LP-${ticker}`, true);
         newX = oldX - 1;
         newY = roundReg(oldY + price, 2);
       } else if (action === 'sell') {
         // user is selling, LP is buying
         // we need to instantly remove old buyOrder and create new one
         // but the sellOrder should be updated after 3 mins
-        await removeOrder(ticker, 'buy', 1, stock.buyP, `LP-${ticker}`, true);
+        //await removeOrder(ticker, 'buy', 1, stock.buyP, `LP-${ticker}`, true);
         newX = oldX + 1;
         newY = roundReg(oldY - price, 2);
       }
@@ -1233,7 +1234,17 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
 
       if (action === 'buy') {
         if (sellPrice !== '-') {
-          await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
+          const stockInfos = await readCSV(path.resolve(__dirname, '../stock_info.csv'));
+          const stockInfo = stockInfos.find(s => s.ticker === ticker);
+          if (parseFloat(stockInfo.buyP) < parseFloat(sellPrice)) {
+            console.log(`adjusting sell order from ${stockInfo.buyP} to ${sellPrice}`);
+            await removeOrder(ticker, 'sell', 1, stock.sellP, `LP-${ticker}`, true);
+            await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
+          } else {
+            console.log(`not removing/adding sell order, as it would decrease from ${stockInfo.buyP} to ${sellPrice}`);
+          }
+          
+          //await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
         }
         //console.log(`Adjusted sell order, gonna remove buy order at ${stock.buyP} and create new one at ${buyPrice} after ${orderDelay/1000}s`);
         console.log(`Adjusted buy order, gonna adjust the sell order after ${orderDelay/1000}s`);
@@ -1249,16 +1260,30 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
           const stock = stockData.find(s => s.ticker === ticker);
           const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
           console.log(`Timeout expired, removing buy order at ${oldBuyP} and creating new at ${buyPrice}`);
-          console.log(`sell order price should be $${sellPrice}`);
-          await removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`, true);
-          if (buyPrice !== '-') {
-            await addOrder(ticker, 'buy', 1, buyPrice, `LP-${ticker}`, 'book');
+          console.log(`old stocks.csv buy order price: ${stock.buyP}`);
+          if (parseFloat(buyPrice) !== parseFloat(stock.buyP)) {
+            console.log(`sell order price should be $${sellPrice}`);
+            await removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`, true);
+            if (buyPrice !== '-') {
+              await addOrder(ticker, 'buy', 1, buyPrice, `LP-${ticker}`, 'book');
+            }
           }
+
         }, orderDelay, stock.buyP, buyPrice); // 3 minutes delay (180,000 milliseconds)
 
       } else {
         if (buyPrice !== '-') {
-          await addOrder(ticker, 'buy', 1, buyPrice, `LP-${ticker}`, 'book');
+          const stockInfos = await readCSV(path.resolve(__dirname, '../stock_info.csv'));
+          const stockInfo = stockInfos.find(s => s.ticker === ticker);
+          if (parseFloat(stockInfo.sellP) > parseFloat(buyPrice)) {
+            console.log(`adjusting buy order from ${stockInfo.sellP} to ${buyPrice}`);
+            await removeOrder(ticker, 'buy', 1, stock.buyP, `LP-${ticker}`, true);
+            await addOrder(ticker, 'buy', 1, buyPrice, `LP-${ticker}`, 'book');    
+          } else {
+            console.log(`not removing/adding buy order, as it would increase from ${stockInfo.sellP} to ${buyPrice}`);
+            //console.log(`not removing/adding order, as both should be ${buyPrice}`);
+          }
+          //await addOrder(ticker, 'buy', 1, buyPrice, `LP-${ticker}`, 'book');
         }
         //console.log(`Adjusted buy order, gonna remove sell order at ${stock.sellP} and create new one at ${sellPrice} after ${orderDelay/1000}s`);
         console.log(`Adjusted buy order, gonna adjust the sell order after ${orderDelay/1000}s`);
@@ -1274,11 +1299,15 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
           const stock = stockData.find(s => s.ticker === ticker);
           const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
           console.log(`Timeout expired, removing sell order at ${oldSellP} and creating new at ${sellPrice}`);
-          console.log(`buy order price should be $${buyPrice}`);
-          await removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`, true);
-          if (sellPrice !== '-') {
-            await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
-          }   
+          console.log(`old stocks.csv sell order price: ${stock.sellP}`);
+          if (parseFloat(sellPrice) !== parseFloat(stock.sellP)) {
+            console.log(`buy order price should be $${buyPrice}`);
+            await removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`, true);
+            if (sellPrice !== '-') {
+              await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
+            }   
+          }
+
         }, orderDelay, stock.sellP, sellPrice); // 3 minutes delay (180,000 milliseconds)
       }
 

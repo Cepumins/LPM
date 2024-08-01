@@ -51,6 +51,7 @@ const ConfirmOrderPopup = forwardRef(({ orderDetails, onClose, createOrderPopupR
         price: parseFloat(price),
         orderExecution
       });
+      console.log(`Created ${orderExecution} ${orderType} order for ${quantity} shares of ${ticker} at $${price} each.`);
       alert(`Created ${orderExecution} ${orderType} order for ${quantity} shares of ${ticker} at $${price} each.`);      
 
       /*

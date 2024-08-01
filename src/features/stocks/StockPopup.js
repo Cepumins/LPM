@@ -205,11 +205,16 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
   }, [isConfirmOpen, stock]);
 
   const hasStockInInventory = () => {
-    return inventory.some(item => item.ticker === stock.ticker && item.quantity > 0);
+    //return inventory.some(item => item.ticker === stock.ticker && item.quantity > 0);
+    return inventory.some(item => {
+      console.log(`stock ${item.ticker} in inventory: ${item.quantity}`);
+      return item.ticker === stock.ticker && item.quantity > 0;
+    });
   };
 
   const canBuyStock = () => {
     const balance = parseFloat(userBalance);
+    console.log(`user balance: ${balance}`);
     const buyPrice = parseFloat(stock.buyP);
     const canBuy = balance >= buyPrice;
     //console.log(`Checking if user can buy: userBalance (${userBalance}) >= stock.buyP (${stock.buyP}) => ${canBuy}`);
