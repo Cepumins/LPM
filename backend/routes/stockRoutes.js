@@ -1261,7 +1261,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
           const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
           console.log(`Timeout expired, removing buy order at ${oldBuyP} and creating new at ${buyPrice}`);
           console.log(`old stocks.csv buy order price: ${stock.buyP}`);
-          if (parseFloat(buyPrice) !== parseFloat(stock.buyP)) {
+          if (parseFloat(buyPrice) !== parseFloat(oldBuyP)) {
             console.log(`sell order price should be $${sellPrice}`);
             await removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`, true);
             if (buyPrice !== '-') {
@@ -1300,7 +1300,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
           const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
           console.log(`Timeout expired, removing sell order at ${oldSellP} and creating new at ${sellPrice}`);
           console.log(`old stocks.csv sell order price: ${stock.sellP}`);
-          if (parseFloat(sellPrice) !== parseFloat(stock.sellP)) {
+          if (parseFloat(sellPrice) !== parseFloat(oldSellP)) {
             console.log(`buy order price should be $${buyPrice}`);
             await removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`, true);
             if (sellPrice !== '-') {

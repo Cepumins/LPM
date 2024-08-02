@@ -1,7 +1,7 @@
 [
   {
     "ticker": "MSFT",
-    "quantity": 195
+    "quantity": 191
   },
   {
     "ticker": "TSLA",
@@ -9,11 +9,11 @@
   },
   {
     "ticker": "EUR",
-    "quantity": 22
+    "quantity": 70
   },
   {
     "ticker": "GOOGL",
-    "quantity": 80
+    "quantity": 81
   },
   {
     "ticker": "JPM",
@@ -34,5 +34,9 @@
   {
     "ticker": "NVDA",
     "quantity": 2
+  },
+  {
+    "ticker": "XOM",
+    "quantity": 5
   }
 ]
