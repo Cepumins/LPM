@@ -121,6 +121,12 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
     setIsConfirmOpen(false);
   };
 
+  const handleConfirmOrder = () => {
+    //console.log(`closing confirm and create!`);
+    setIsConfirmOpen(false);
+    onClose(); // Close the CreateOrderPopup as well
+  };
+
   return (
     <>
       <div className="create-order-popup">
@@ -174,7 +180,8 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
           //orderType={confirmDetails.orderType}
           orderDetails={confirmDetails}
           onClose={closeConfirmPopup}
-          createOrderPopupRef={ref}
+          onConfirm={handleConfirmOrder}
+          //createOrderPopupRef={ref}
           orderExecution='book'
           /*
           onConfirm={async () => {

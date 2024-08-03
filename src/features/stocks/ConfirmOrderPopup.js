@@ -6,7 +6,7 @@ import axios from 'axios';
 
 const taxAmount = 0.01;
 
-const ConfirmOrderPopup = forwardRef(({ orderDetails, onClose, createOrderPopupRef, orderExecution }, ref) => {
+const ConfirmOrderPopup = forwardRef(({ orderDetails, onClose, onConfirm, createOrderPopupRef, orderExecution }, ref) => {
   const { ticker, orderType, quantity, price } = orderDetails;
 
   /*
@@ -75,7 +75,7 @@ const ConfirmOrderPopup = forwardRef(({ orderDetails, onClose, createOrderPopupR
         alert(`Created ${orderType} order for ${quantity} shares of ${ticker} at $${price} each.`);        
       }*/
       
-      //onConfirm();
+      onConfirm();
       onClose();
     } catch (error) {
       console.error(`Error creating ${orderType} order:`, error);
