@@ -9,7 +9,7 @@
   },
   {
     "ticker": "EUR",
-    "quantity": 72
+    "quantity": 74
   },
   {
     "ticker": "GOOGL",
@@ -37,6 +37,6 @@
   },
   {
     "ticker": "XOM",
-    "quantity": 5
+    "quantity": 4
   }
 ]
