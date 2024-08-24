@@ -50,6 +50,7 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
 
   useEffect(() => {
     setOrderDetails(stock); // Reset orderDetails when stock prop changes
+    console.log('new stock:', JSON.stringify(stock, null, 2));
   }, [stock]);
 
   useEffect(() => {
@@ -149,7 +150,7 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
       setConfirmDetails({
         orderType: 'buy',
         ticker: stock.ticker,
-        price: parseFloat(stock.buyP),
+        //price: parseFloat(stock.buyP),
         quantity: 1,
       });
       setIsConfirmOpen(true);
@@ -170,7 +171,7 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
       setConfirmDetails({
         orderType: 'sell',
         ticker: stock.ticker,
-        price: parseFloat(stock.sellP),
+        //price: parseFloat(stock.sellP),
         quantity: 1,
       });
       setIsConfirmOpen(true);
@@ -219,17 +220,17 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
   */
 
   const checkUserBalance = () => {
-    console.log('checking user balance');
+    //console.log('checking user balance');
     const balance = parseFloat(userBalance);
-    console.log(`user balance: ${balance}`);
+    //console.log(`user balance: ${balance}`);
     const buyPrice = parseFloat(stock.buyP);
     setCanBuy(balance >= buyPrice);
   };
 
   const checkUserInventory = () => {
-    console.log('checking user inventory');
+    //console.log('checking user inventory');
     const hasStock = inventory.some(item => {
-      console.log(`stock ${item.ticker} in inventory: ${item.quantity}`);
+      //console.log(`stock ${item.ticker} in inventory: ${item.quantity}`);
       return item.ticker === stock.ticker && item.quantity > 0;
     });
     setHasStock(hasStock);
@@ -306,8 +307,9 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
       {isConfirmOpen && (
         <ConfirmOrderPopup
           ref={confirmOrderPopupRef}
-          orderType={confirmDetails.orderType}
-          orderDetails={confirmDetails}
+          //orderType={confirmDetails.orderType}
+          orderDetails = {confirmDetails}
+          priceDetails={stock}
           onClose={closeConfirmPopup}
           orderExecution="market"
           /*

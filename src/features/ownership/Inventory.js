@@ -30,7 +30,7 @@ const Inventory = ({ userId }) => {
 
   const fetchInventory = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/users/inventory/${userId}`);
+      const response = await axios.get(`http://localhost:5001/api/users/inventory/${userId}`);
       //const reversedInventory = response.data.reverse();
       const reversedInventory = response.data.reverse().map((stock, index) => ({
         ...stock,
@@ -45,7 +45,7 @@ const Inventory = ({ userId }) => {
 
   const fetchStockInfo = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/stocks/info');
+      const response = await axios.get('http://localhost:5001/api/stocks/info');
       setStockInfo(response.data);
     } catch (error) {
       console.error('Error fetching stock info:', error);

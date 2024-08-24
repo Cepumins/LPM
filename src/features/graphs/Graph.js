@@ -81,7 +81,7 @@ const computeLinePoints = (x, y, numPoints, decimals = 2) => {
 
 const fetchAndUpdateGraphData = async (ticker, setGraphData, setStockData) => {
   try {
-    const response = await axios.get('http://localhost:5000/api/stocks/data');
+    const response = await axios.get('http://localhost:5001/api/stocks/data');
     const stocks = response.data;
     const stock = stocks.find(s => s.ticker === ticker);
     if (stock) {
@@ -161,7 +161,7 @@ const Graph = ({ ticker }) => {
     const fetchData = () => fetchAndUpdateGraphData(ticker, setGraphData, setStockData);
     fetchData();
 
-    const ws = new WebSocket('ws://localhost:5000');
+    const ws = new WebSocket('ws://localhost:5001');
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
       if (message.type === 'update') {

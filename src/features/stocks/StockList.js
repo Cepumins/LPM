@@ -7,6 +7,7 @@ import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
 
 function StockList({ userId, userBalance, inventory, refreshUserData }) {
   const [stocks, setStocks] = useState([]);
+  const [stockIndexMap, setStockIndexMap] = useState(null); // Map of stock tickers to their original indexes
   const [selectedStock, setSelectedStock] = useState(null);
   const [sortOption, setSortOption] = useState('default');
   const [isDropdownDisabled, setDropdownDisabled] = useState(false);
@@ -15,10 +16,28 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
   useEffect(() => {
     const fetchStocks = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/stocks/info');
+        const response = await axios.get('http://localhost:5001/api/stocks/info');
         const fetchedStocks = response.data;
+        //console.log("Fetched Stocks:", fetchedStocks);
+        /*
         setStocks(fetchedStocks);
         sortStocks(sortOption, fetchedStocks);
+        */
+        // Add indexes to the fetched stocks to maintain original order
+        // Create a map of stock tickers to their original indexes
+        // Only create the stock index map if it doesn't already exist
+        if (!stockIndexMap) {
+          const indexMap = {};
+          fetchedStocks.forEach((stock, index) => {
+            indexMap[stock.ticker] = index;
+          });
+          setStockIndexMap(indexMap);
+          //console.log("Stock Index Map:", indexMap);
+        }
+
+        setStocks(fetchedStocks);
+        sortStocks(sortOption, fetchedStocks);
+        //console.log("Stocks after initial sort:", fetchedStocks);
         //sortStocks('default', fetchedStocks); // Sort alphabetically initially
       } catch (error) {
         console.error('Error fetching stocks:', error);
@@ -26,8 +45,32 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
     };
 
     fetchStocks();
+  }, []);
 
-    const ws = new WebSocket('ws://localhost:5000');
+  useEffect(() => {
+
+
+    /*
+    const checkUserBalance = () => {
+      console.log('STOCKLIST - checking user balance');
+      const balance = parseFloat(userBalance);
+      console.log(`STOCKLIST - suser balance: ${balance}`);
+    };
+  
+    const checkUserInventory = () => {
+      console.log('STOCKLIST - checking user inventory');
+      const hasStock = inventory.some(item => {
+        console.log(`STOCKLIST - stock ${item.ticker} in inventory: ${item.quantity}`);
+        //return item.ticker === stock.ticker && item.quantity > 0;
+      });
+      //setHasStock(hasStock);
+    };
+
+    checkUserBalance();
+    checkUserInventory();
+    */
+
+    const ws = new WebSocket('ws://localhost:5001');
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
       if (message.type === 'update') {
@@ -68,7 +111,7 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
     return () => {
       ws.close();
     };
-  }, [selectedStock, sortOption]);
+  }, [selectedStock]);
 
   /*
   useEffect(() => {
@@ -123,7 +166,17 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
     };
   
     if (option === 'default') {
-      sortedStocks.sort((a, b) => new Date(b.updated) - new Date(a.updated));
+      if (stockIndexMap) {
+        // Sort according to the original order using the index map
+        sortedStocks = [...fetchedStocks].sort((a, b) => {
+          return stockIndexMap[a.ticker] - stockIndexMap[b.ticker];
+        });
+      } else {
+        //console.log('sorting stocks by the date, since no map exists');
+        sortedStocks.sort((a, b) => new Date(b.updated) - new Date(a.updated));
+      }
+      
+
     } else if (option === 'alphabetical') {
       sortedStocks.sort((a, b) => a.ticker.localeCompare(b.ticker));
     } else if (option === 'cheapest') {
@@ -133,6 +186,7 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
     }
   
     setStocks(sortedStocks);
+    console.log(`Stocks sorted by ${option}:`, sortedStocks);
   };
   
 

@@ -27,7 +27,7 @@ function App() {
 
   const checkActiveSession = async (storedUserId) => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/users/check-session/${storedUserId}`, { withCredentials: true });
+      const response = await axios.get(`http://localhost:5001/api/users/check-session/${storedUserId}`, { withCredentials: true });
       if (response.data.active) {
         setUserId(storedUserId);
         fetchUserBalance(storedUserId);
@@ -44,7 +44,7 @@ function App() {
 
   const fetchUserBalance = async (userId) => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/users/details/${userId}`);
+      const response = await axios.get(`http://localhost:5001/api/users/details/${userId}`);
       setUserBalance(response.data.balance);
     } catch (error) {
       console.error('Error fetching user balance:', error);
@@ -53,7 +53,9 @@ function App() {
 
   const fetchUserInventory = async (userId) => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/users/inventory/${userId}`);
+      const response = await axios.get(`http://localhost:5001/api/users/inventory/${userId}`);
+      //console.log('App.js received response:', JSON.stringify(response, null, 2));
+      //console.log('App.js received response.data:', JSON.stringify(response.data, null, 2));
       setInventory(response.data);
     } catch (error) {
       console.error('Error fetching user inventory:', error);
@@ -61,7 +63,7 @@ function App() {
   };
 
   const setupWebSocket = (userId) => {
-    const socket = new WebSocket('ws://localhost:5000');
+    const socket = new WebSocket('ws://localhost:5001');
 
     socket.onopen = () => {
       console.log('WebSocket connection established');
@@ -71,6 +73,8 @@ function App() {
       const message = JSON.parse(event.data);
       if (message.type === 'balanceUpdate' && message.userId === userId) {
         setUserBalance(message.balance);
+      } else if (message.type === 'inventoryUpdate' && message.userId === userId) {
+        setInventory(message.inventory);
       }
     };
 
@@ -97,7 +101,7 @@ function App() {
 
   const handleLogout = async () => {
     try {
-      await axios.post('http://localhost:5000/api/users/logout', {}, { withCredentials: true });
+      await axios.post('http://localhost:5001/api/users/logout', {}, { withCredentials: true });
       setUserId(null);
       setUserBalance(null);
       setInventory([]);

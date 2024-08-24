@@ -13,8 +13,8 @@ const router = express.Router();
 
 // --- SUPPORT ---
 const decimals = 2;
-const minTax = 0 //Math.pow(10, -decimals);
-const taxP = 0;
+//const minTax = 0 //Math.pow(10, -decimals);
+const taxP = 0.01;
 const dividendP = 0;
 const sellRound = 'up';
 const buyRound = 'down';
@@ -56,7 +56,7 @@ const internalApiCall = (path, data, callback) => {
 
   const options = {
     hostname: 'localhost',
-    port: 5000,
+    port: 5001,
     path,
     method: 'POST',
     headers: {
@@ -450,7 +450,7 @@ const updateUserInventory = async (userId, ticker, quantity, action) => {
       inventory.push({ ticker, quantity });
     }
   } else if (action === 'sell') {
-    console.log(`Removing ${quantity} of ${ticker} to user ${userId} inventory`);
+    console.log(`Removing ${quantity} of ${ticker} from user ${userId} inventory`);
     if (stock) {
       stock.quantity -= quantity;
       if (stock.quantity <= 0) {
@@ -460,6 +460,10 @@ const updateUserInventory = async (userId, ticker, quantity, action) => {
   }
 
   fs.writeFileSync(filePath, JSON.stringify(inventory, null, 2));
+
+  // Broadcast updated inventory
+  const wss = getWebSocketServer();
+  wss.broadcast({ type: 'inventoryUpdate', userId, inventory: inventory });
 };
 
 // old buy/sell handling
@@ -1184,13 +1188,131 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
     return true;
   };
 
+  //const addToUserBalanceAfterTax = async (ticker, userId, price, quantity) => {
+  const addToUserBalanceAfterTax = async (ticker, userId, priceTimesQuantity) => {
+    //const priceTimesQuantity = roundReg(price * quantity, 2);
+    //const priceTimesQuantity = price * quantity;
+    const saleTaxAmount = Math.max(roundReg(priceTimesQuantity * taxP, 2), 0.01);
+    console.log(`the tax rounded should be ${saleTaxAmount}`);
+    const taxToLP = roundUp(saleTaxAmount / 2, 2);
+    const taxToOne = roundReg(saleTaxAmount - taxToLP, 2);
+    console.log(`LP gets: ${taxToLP}, id one gets: ${taxToOne}`);
+    const receivedAmountOnSale = roundReg(priceTimesQuantity - saleTaxAmount, 2)
+    console.log(`the after tax received should be ${receivedAmountOnSale}`);
+    // sellers balance is updated with after tax amount
+    await updateUserBalance(userId, receivedAmountOnSale);
+
+    // add LPs share of tax to that LPs y
+    const filePath = path.resolve(__dirname, '../stocks.csv');
+    const stockData = await readCSV(filePath);
+    // Find and update the specific stock's 'y' value
+    const updatedStockData = stockData.map(s => {
+      if (s.ticker === ticker) {
+        const newY = roundReg(parseFloat(s.y) + taxToLP, 2);
+        console.log(`added ${taxToLP} to ${ticker} LP, new Y: ${newY}`);
+        return { ...s, y: String(newY) }; // Only update the 'y' field
+      }
+      return s; // No change for other stocks
+    });
+    
+    // Convert the updated data back to CSV format
+    const fields = ['ticker', 'x', 'y', 'Pa', 'Pb', 'price', 'L', 'buyP', 'sellP'];
+    const opts = { fields };
+    const csvData = parse(updatedStockData, opts);
+
+    // Write the updated data back to the CSV file
+    await fs.writeFileSync(filePath, csvData);
+
+    if (taxToOne > 0) {
+      await updateUserBalance("1", taxToOne);
+    }
+  }
+
   const updateAskerDetails = async (action, ticker, userId, quantity, price) => {
     if (action === 'buy') {
       await updateUserBalance(userId, -price * quantity);
       await updateUserInventory(userId, ticker, quantity, 'buy');
-    } else if (action === 'sell') {
-      await updateUserBalance(userId, price * quantity);
+    } else if (action === 'sell')  {
       await updateUserInventory(userId, ticker, quantity, 'sell');
+      // instead of adding full price to the users inventory, but subtract the tax and then add it
+      await addToUserBalanceAfterTax(ticker, userId, price * quantity);
+
+      //await updateUserBalance(userId, price * quantity);
+
+      // function that takes the amount (price * quantity), userId, ticker and does this
+      // probably should also be called by updateGiverDetails (if they sell and asker buys)
+      
+      //const saleTaxAmount = Math.max(parseFloat((price * quantity * taxP).toFixed(2)), 0.01);
+      //console.log(`the tax should be ${saleTaxAmount}`);
+
+      /*
+      const taxToLP = parseFloat((saleTaxAmount / 2).toFixed(2));
+      const taxToOne = parseFloat((saleTaxAmount - taxToLP).toFixed(2));
+      console.log(`LP gets: ${taxToLP}, id one gets: ${taxToOne}`);
+      const receivedAmountOnSale = parseFloat((price * quantity - saleTaxAmount).toFixed(2));
+      console.log(`the after tax received should be ${receivedAmountOnSale}`);
+      */
+      /*
+      const priceTimesQuantity = roundReg(price * quantity, 2);
+      const saleTaxAmountRounded = Math.max(roundReg(priceTimesQuantity * taxP, 2), 0.01);
+      console.log(`the tax rounded should be ${saleTaxAmountRounded}`);
+      const taxToLPRounded = roundUp(saleTaxAmountRounded / 2, 2);
+      const taxToOneRounded = roundReg(saleTaxAmountRounded - taxToLPRounded, 2);
+      console.log(`LP gets: ${taxToLPRounded}, id one gets: ${taxToOneRounded}`);
+      const receivedAmountOnSaleRounded = roundReg(priceTimesQuantity - saleTaxAmountRounded, 2)
+      console.log(`the after tax received should be ${receivedAmountOnSaleRounded}`);
+
+      await updateUserBalance(userId, receivedAmountOnSaleRounded);
+      */
+      /*
+      const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
+      const stock = stockData.find(s => s.ticker === ticker);
+      const oldY = parseFloat(stock.y);
+      newY = roundReg(oldY + taxToLPRounded, 2);
+      
+      const updatedStock = {
+        ...stock,
+        x: String(stock.x),
+        y: String(roundReg(stock.y + taxToLPRounded, 2)),
+        price: String(stock.price),
+        L: String(stock.L),
+        buyP: String(stock.buyP),
+        sellP: String(stock.sellP)
+      };
+
+      const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
+      const updatedStockData = stockData.map(s => s.ticker === ticker ? updatedStock : s);
+
+      const fields = ['ticker', 'x', 'y', 'Pa', 'Pb', 'price', 'L', 'buyP', 'sellP'];
+      const opts = { fields };
+      const csvData = parse(updatedStockData, opts);
+      fs.writeFileSync(path.resolve(__dirname, '../stocks.csv'), csvData);
+      }*/
+      /*
+      const filePath = path.resolve(__dirname, '../stocks.csv');
+      const stockData = await readCSV(filePath);
+      // Find and update the specific stock's 'y' value
+      const updatedStockData = stockData.map(s => {
+        if (s.ticker === ticker) {
+          const newY = roundReg(parseFloat(s.y) + taxToLPRounded, 2);
+          console.log(`added ${taxToLPRounded} to ${ticker} LP, new Y: ${newY}`);
+          return { ...s, y: String(newY) }; // Only update the 'y' field
+        }
+        return s; // No change for other stocks
+      });
+      
+      // Convert the updated data back to CSV format
+      const fields = ['ticker', 'x', 'y', 'Pa', 'Pb', 'price', 'L', 'buyP', 'sellP'];
+      const opts = { fields };
+      const csvData = parse(updatedStockData, opts);
+
+      // Write the updated data back to the CSV file
+      await fs.writeFileSync(filePath, csvData);
+
+      if (taxToOneRounded > 0) {
+        await updateUserBalance("1", taxToOneRounded);
+      }
+      */
     }
   };
 
@@ -1199,7 +1321,11 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
     if (action === 'sell') {
       await updateUserInventory(giverId, ticker, quantity, 'buy');
     } else if (action === 'buy') {
-      await updateUserBalance(giverId, price);
+      // perhaps price * quantity
+      // shouldnt receive the full amount, taxes should be subtracted
+      //await updateUserBalance(giverId, price);
+      // instead of adding full price to the users inventory, but subtract the tax and then add it
+      await addToUserBalanceAfterTax(ticker, giverId, price * quantity);
     }
   };
 
@@ -1245,10 +1371,12 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
           }
           
           //await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
+        } else {
+          await removeOrder(ticker, 'sell', 1, stock.sellP, `LP-${ticker}`, true);
         }
         //console.log(`Adjusted sell order, gonna remove buy order at ${stock.buyP} and create new one at ${buyPrice} after ${orderDelay/1000}s`);
         console.log(`Adjusted buy order, gonna adjust the sell order after ${orderDelay/1000}s`);
-        setTimeout(async (oldBuyP, newBuyP) => {
+        setTimeout(async () => {
           console.log(`timeout of ${orderDelay/1000}s has ended`);
           /*
           await removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`);
@@ -1259,17 +1387,19 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
           const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
           const stock = stockData.find(s => s.ticker === ticker);
           const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
-          console.log(`Timeout expired, removing buy order at ${oldBuyP} and creating new at ${buyPrice}`);
+          const stockInfos = await readCSV(path.resolve(__dirname, '../stock_info.csv'));
+          const stockInfo = stockInfos.find(s => s.ticker === ticker);
+          console.log(`Timeout expired, removing buy order at ${stockInfo.sellP} and creating new at ${buyPrice}`);
           console.log(`old stocks.csv buy order price: ${stock.buyP}`);
-          if (parseFloat(buyPrice) !== parseFloat(oldBuyP)) {
+          if (parseFloat(buyPrice) !== parseFloat(stockInfo.sellP)) {
             console.log(`sell order price should be $${sellPrice}`);
-            await removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`, true);
+            await removeOrder(ticker, 'buy', 1, stockInfo.sellP, `LP-${ticker}`, true);
             if (buyPrice !== '-') {
               await addOrder(ticker, 'buy', 1, buyPrice, `LP-${ticker}`, 'book');
             }
           }
 
-        }, orderDelay, stock.buyP, buyPrice); // 3 minutes delay (180,000 milliseconds)
+        }, orderDelay); // 3 minutes delay (180,000 milliseconds)
 
       } else {
         if (buyPrice !== '-') {
@@ -1284,10 +1414,12 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
             //console.log(`not removing/adding order, as both should be ${buyPrice}`);
           }
           //await addOrder(ticker, 'buy', 1, buyPrice, `LP-${ticker}`, 'book');
+        } else {
+          await removeOrder(ticker, 'buy', 1, stock.buyP, `LP-${ticker}`, true);
         }
         //console.log(`Adjusted buy order, gonna remove sell order at ${stock.sellP} and create new one at ${sellPrice} after ${orderDelay/1000}s`);
         console.log(`Adjusted buy order, gonna adjust the sell order after ${orderDelay/1000}s`);
-        setTimeout(async (oldSellP, newSellP) => {
+        setTimeout(async () => {
           console.log(`timeout of ${orderDelay/1000}s has ended`);
           /*
           await removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`);
@@ -1298,17 +1430,19 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
           const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
           const stock = stockData.find(s => s.ticker === ticker);
           const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
-          console.log(`Timeout expired, removing sell order at ${oldSellP} and creating new at ${sellPrice}`);
+          const stockInfos = await readCSV(path.resolve(__dirname, '../stock_info.csv'));
+          const stockInfo = stockInfos.find(s => s.ticker === ticker);
+          console.log(`Timeout expired, removing sell order at ${stockInfo.buyP} and creating new at ${sellPrice}`);
           console.log(`old stocks.csv sell order price: ${stock.sellP}`);
-          if (parseFloat(sellPrice) !== parseFloat(oldSellP)) {
+          if (parseFloat(sellPrice) !== parseFloat(stockInfo.buyP)) {
             console.log(`buy order price should be $${buyPrice}`);
-            await removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`, true);
+            await removeOrder(ticker, 'sell', 1, stockInfo.buyP, `LP-${ticker}`, true);
             if (sellPrice !== '-') {
               await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
             }   
           }
 
-        }, orderDelay, stock.sellP, sellPrice); // 3 minutes delay (180,000 milliseconds)
+        }, orderDelay); // 3 minutes delay (180,000 milliseconds)
       }
 
 

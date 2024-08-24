@@ -5,38 +5,34 @@
   },
   {
     "ticker": "TSLA",
-    "quantity": 29
+    "quantity": 12
   },
   {
     "ticker": "EUR",
-    "quantity": 74
+    "quantity": 37
   },
   {
     "ticker": "GOOGL",
-    "quantity": 81
-  },
-  {
-    "ticker": "JPM",
-    "quantity": 2
-  },
-  {
-    "ticker": "AAPL",
-    "quantity": 4
+    "quantity": 77
   },
   {
     "ticker": "LLY",
-    "quantity": 5
+    "quantity": 6
   },
   {
     "ticker": "AMZN",
-    "quantity": 4
+    "quantity": 5
   },
   {
     "ticker": "NVDA",
-    "quantity": 2
+    "quantity": 7
   },
   {
     "ticker": "XOM",
+    "quantity": 11
+  },
+  {
+    "ticker": "AAPL",
     "quantity": 4
   }
 ]

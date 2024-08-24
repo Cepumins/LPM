@@ -10,7 +10,7 @@ function RegisterPopup({ onClose, onRegister }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('http://localhost:5000/api/users/register', { name, password });
+      const response = await axios.post('http://localhost:5001/api/users/register', { name, password });
       const userId = response.data.userId;
       localStorage.setItem('userId', userId); // Store user ID in localStorage
       onRegister(userId);

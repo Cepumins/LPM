@@ -8,7 +8,7 @@ function Settings() {
   const [sortedStocks, setSortedStocks] = useState([]);
 
   useEffect(() => {
-    axios.get('http://localhost:5000/api/stocks/data')
+    axios.get('http://localhost:5001/api/stocks/data')
       .then(response => {
         setStocks(response.data);
         setSortedStocks(response.data); // Initialize sortedStocks with the fetched data
@@ -91,7 +91,7 @@ function Settings() {
     });
     */
 
-    axios.post('http://localhost:5000/api/stocks/data/update', updatedStocks)
+    axios.post('http://localhost:5001/api/stocks/data/update', updatedStocks)
       .then(response => {
         setStocks(response.data);
         setSortedStocks(response.data); // Assuming the response contains updated stock data

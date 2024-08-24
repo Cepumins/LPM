@@ -47,7 +47,8 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
 
   const handleSubmit = async () => {
     const roundedPrice = roundToTwoDecimalPlaces(parseFloat(price));
-    const totalCost = roundedPrice * parseInt(quantity);
+    //const totalCost = roundedPrice * parseInt(quantity);
+    const totalCost = price * parseInt(quantity);
     if (orderType === 'buy' && totalCost > userBalance) {
       alert('Insufficient balance to create this buy order.');
       return;
@@ -61,7 +62,7 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
       price: roundedPrice
     };
 
-    console.log("Confirm details before setting state:", newConfirmDetails );
+    //console.log("Confirm details before setting state:", newConfirmDetails );
     setConfirmDetails(newConfirmDetails);
     /*console.log(`Ticker: ${confirmDetails.ticker}`);
     console.log(`Order Type: ${confirmDetails.orderType}`);
@@ -69,8 +70,8 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
     console.log(`Price: ${confirmDetails.price}`);
     setConfirmDetails(confirmDetails);*/
     setIsConfirmOpen(true);
-    console.log(`State after setting confirm details`, confirmDetails);
-    console.log(`Is Confirm Open: ${isConfirmOpen}`);
+    //console.log(`State after setting confirm details`, confirmDetails);
+    //console.log(`Is Confirm Open: ${isConfirmOpen}`);
     //console.log(`Confirm Details:`, confirmDetails);
     /*
     try {

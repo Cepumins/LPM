@@ -8,7 +8,7 @@ const { setupWebSocketServer } = require('./routes/websocket');
 const { clearSessions } = require('./users/activeSessions');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Create the session store
 const sessionStore = new session.MemoryStore();
