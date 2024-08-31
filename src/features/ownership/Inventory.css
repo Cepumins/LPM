@@ -1,6 +1,9 @@
+.default-message {
+  margin: 20px;
+}
+
 .inventory-container {
   margin: 0 auto;
-  
 }
 
 .inventory-list {

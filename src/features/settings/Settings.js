@@ -245,6 +245,12 @@ function Settings() {
   */
 
   const formatNumberWithThousandSeparators = (number) => {
+    // Check if the number is "-" or null, and return "-" in those cases
+    if (number === "-" || number === null || number === undefined) {
+      return "-";
+    }
+  
+    // Otherwise, format the number with thousand separators
     return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "'");
   };
   

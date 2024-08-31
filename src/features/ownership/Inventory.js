@@ -112,6 +112,10 @@ const Inventory = ({ userId }) => {
     (stock.type && stock.type.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  if (!userId) {
+    return <div className="default-message">Login to see your inventory.</div>;
+  }
+
   return (
     <div className="inventory-container">
       <div className='flex justify-end'>

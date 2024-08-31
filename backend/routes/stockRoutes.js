@@ -19,6 +19,9 @@ const dividendP = 0;
 const sellRound = 'up';
 const buyRound = 'down';
 
+const activeTimeouts = {}; // Global timeout tracker
+const maxTimeouts = 10; // Maximum allowed timeouts per ticker
+
 const roundUp = (amount, decimals) => {
   const factor = Math.pow(10, decimals);
   return Math.ceil(amount * factor) / factor;
@@ -433,6 +436,9 @@ const updateUserBalance = async (userId, amount) => {
 
 // Function to update user inventory
 const updateUserInventory = async (userId, ticker, quantity, action) => {
+  if (userId.startsWith('LP-')) {
+    return;
+  }
   const filePath = path.resolve(__dirname, `../users/inventory/${userId}.json`);
   let inventory = [];
 
@@ -445,18 +451,35 @@ const updateUserInventory = async (userId, ticker, quantity, action) => {
   if (action === 'buy') {
     console.log(`Adding ${quantity} of ${ticker} to user ${userId} inventory`);
     if (stock) {
-      stock.quantity += quantity;
+      console.log(`Before adding: quantity = ${stock.quantity}`);
+      console.log(`Before adding: inventory entry = ${JSON.stringify(stock, null, 2)}`);
+      stock.quantity += parseFloat(quantity);
     } else {
+      console.log(`Before adding: No existing inventory entry for ${ticker}`);
       inventory.push({ ticker, quantity });
     }
+    // Log quantity and inventory after adding
+    const updatedStock = inventory.find(s => s.ticker === ticker);
+    console.log(`After adding: quantity = ${updatedStock.quantity}`);
+    console.log(`After adding: inventory entry = ${JSON.stringify(updatedStock, null, 2)}`);
+
   } else if (action === 'sell') {
     console.log(`Removing ${quantity} of ${ticker} from user ${userId} inventory`);
     if (stock) {
-      stock.quantity -= quantity;
+      console.log(`Before removing: quantity = ${stock.quantity}`);
+      console.log(`Before removing: inventory entry = ${JSON.stringify(stock, null, 2)}`);
+      stock.quantity -= parseFloat(quantity);
+      console.log(`After removing: quantity = ${stock.quantity}`);
       if (stock.quantity <= 0) {
         inventory = inventory.filter(s => s.ticker !== ticker);
+        console.log(`After removing: ${ticker} has been removed from inventory because quantity is ${stock.quantity}`);
+      } else {
+        console.log(`After removing: inventory entry = ${JSON.stringify(stock, null, 2)}`);
       }
+    } else {
+      console.log(`!!!IMPORTANT Before removing: User ${userId} No inventory entry for ${ticker} !!!`);
     }
+  
   }
 
   fs.writeFileSync(filePath, JSON.stringify(inventory, null, 2));
@@ -1193,12 +1216,12 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
     //const priceTimesQuantity = roundReg(price * quantity, 2);
     //const priceTimesQuantity = price * quantity;
     const saleTaxAmount = Math.max(roundReg(priceTimesQuantity * taxP, 2), 0.01);
-    console.log(`the tax rounded should be ${saleTaxAmount}`);
+    //console.log(`the tax rounded should be ${saleTaxAmount}`);
     const taxToLP = roundUp(saleTaxAmount / 2, 2);
     const taxToOne = roundReg(saleTaxAmount - taxToLP, 2);
-    console.log(`LP gets: ${taxToLP}, id one gets: ${taxToOne}`);
+    //console.log(`LP gets: ${taxToLP}, id one gets: ${taxToOne}`);
     const receivedAmountOnSale = roundReg(priceTimesQuantity - saleTaxAmount, 2)
-    console.log(`the after tax received should be ${receivedAmountOnSale}`);
+    //console.log(`the after tax received should be ${receivedAmountOnSale}`);
     // sellers balance is updated with after tax amount
     await updateUserBalance(userId, receivedAmountOnSale);
 
@@ -1330,6 +1353,8 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
   };
 
   const updateLPDetails = async (action, ticker, price) => {
+    activeTimeouts[ticker] = activeTimeouts[ticker] || 0;
+
     const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
     const stock = stockData.find(s => s.ticker === ticker);
     if (stock) {
@@ -1375,31 +1400,43 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
           await removeOrder(ticker, 'sell', 1, stock.sellP, `LP-${ticker}`, true);
         }
         //console.log(`Adjusted sell order, gonna remove buy order at ${stock.buyP} and create new one at ${buyPrice} after ${orderDelay/1000}s`);
-        console.log(`Adjusted buy order, gonna adjust the sell order after ${orderDelay/1000}s`);
-        setTimeout(async () => {
-          console.log(`timeout of ${orderDelay/1000}s has ended`);
-          /*
-          await removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`);
-          if (buyPrice !== '-') {
-            await addOrder(ticker, 'buy', 1, newBuyP, `LP-${ticker}`, 'book');
-          }
-          */
-          const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
-          const stock = stockData.find(s => s.ticker === ticker);
-          const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
-          const stockInfos = await readCSV(path.resolve(__dirname, '../stock_info.csv'));
-          const stockInfo = stockInfos.find(s => s.ticker === ticker);
-          console.log(`Timeout expired, removing buy order at ${stockInfo.sellP} and creating new at ${buyPrice}`);
-          console.log(`old stocks.csv buy order price: ${stock.buyP}`);
-          if (parseFloat(buyPrice) !== parseFloat(stockInfo.sellP)) {
-            console.log(`sell order price should be $${sellPrice}`);
-            await removeOrder(ticker, 'buy', 1, stockInfo.sellP, `LP-${ticker}`, true);
-            if (buyPrice !== '-') {
-              await addOrder(ticker, 'buy', 1, buyPrice, `LP-${ticker}`, 'book');
-            }
-          }
+        // Limit the number of active timeouts per ticker
+        if (activeTimeouts[ticker] < maxTimeouts) {
+          activeTimeouts[ticker] += 1;
 
-        }, orderDelay); // 3 minutes delay (180,000 milliseconds)
+          console.log(`Adjusted buy order, gonna adjust the sell order after ${orderDelay/1000}s`);
+          setTimeout(async () => {
+            try {
+              console.log(`timeout of ${orderDelay/1000}s has ended`);
+              /*
+              await removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`);
+              if (buyPrice !== '-') {
+                await addOrder(ticker, 'buy', 1, newBuyP, `LP-${ticker}`, 'book');
+              }
+              */
+              const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
+              const stock = stockData.find(s => s.ticker === ticker);
+              const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
+              const stockInfos = await readCSV(path.resolve(__dirname, '../stock_info.csv'));
+              const stockInfo = stockInfos.find(s => s.ticker === ticker);
+              console.log(`Timeout expired, removing buy order at ${stockInfo.sellP} and creating new at ${buyPrice}`);
+              //console.log(`old stocks.csv buy order price: ${stock.buyP}`);
+              if (parseFloat(buyPrice) !== parseFloat(stockInfo.sellP)) {
+                console.log(`sell order price should be $${sellPrice}`);
+                await removeOrder(ticker, 'buy', 1, stockInfo.sellP, `LP-${ticker}`, true);
+                if (buyPrice !== '-') {
+                  await addOrder(ticker, 'buy', 1, buyPrice, `LP-${ticker}`, 'book');
+                }
+              }
+            } finally {
+              // Decrease the count of active timeouts
+              activeTimeouts[ticker] = Math.max(activeTimeouts[ticker] - 1, 0);
+              console.log(`Completed timeout for ${ticker}. Remaining active timeouts: ${activeTimeouts[ticker]}`);
+            }
+          }, orderDelay); // 3 minutes delay (180,000 milliseconds)
+        } else {
+          console.log(`Skipped setting new timeout for ${ticker} (${action} order). Active timeouts limit reached: ${activeTimeouts[ticker]}`);
+        }
 
       } else {
         if (buyPrice !== '-') {
@@ -1417,32 +1454,44 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
         } else {
           await removeOrder(ticker, 'buy', 1, stock.buyP, `LP-${ticker}`, true);
         }
-        //console.log(`Adjusted buy order, gonna remove sell order at ${stock.sellP} and create new one at ${sellPrice} after ${orderDelay/1000}s`);
-        console.log(`Adjusted buy order, gonna adjust the sell order after ${orderDelay/1000}s`);
-        setTimeout(async () => {
-          console.log(`timeout of ${orderDelay/1000}s has ended`);
-          /*
-          await removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`);
-          if (sellPrice !== '-') {
-            await addOrder(ticker, 'sell', 1, newSellP, `LP-${ticker}`, 'book');
-          }
-          */
-          const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
-          const stock = stockData.find(s => s.ticker === ticker);
-          const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
-          const stockInfos = await readCSV(path.resolve(__dirname, '../stock_info.csv'));
-          const stockInfo = stockInfos.find(s => s.ticker === ticker);
-          console.log(`Timeout expired, removing sell order at ${stockInfo.buyP} and creating new at ${sellPrice}`);
-          console.log(`old stocks.csv sell order price: ${stock.sellP}`);
-          if (parseFloat(sellPrice) !== parseFloat(stockInfo.buyP)) {
-            console.log(`buy order price should be $${buyPrice}`);
-            await removeOrder(ticker, 'sell', 1, stockInfo.buyP, `LP-${ticker}`, true);
-            if (sellPrice !== '-') {
-              await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
-            }   
-          }
+        // Limit the number of active timeouts per ticker
+        if (activeTimeouts[ticker] < maxTimeouts) {
+          activeTimeouts[ticker] += 1;
 
-        }, orderDelay); // 3 minutes delay (180,000 milliseconds)
+          //console.log(`Adjusted buy order, gonna remove sell order at ${stock.sellP} and create new one at ${sellPrice} after ${orderDelay/1000}s`);
+          console.log(`Adjusted buy order, gonna adjust the sell order after ${orderDelay/1000}s`);
+          setTimeout(async () => {
+            try {
+              console.log(`timeout of ${orderDelay/1000}s has ended`);
+              /*
+              await removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`);
+              if (sellPrice !== '-') {
+                await addOrder(ticker, 'sell', 1, newSellP, `LP-${ticker}`, 'book');
+              }
+              */
+              const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
+              const stock = stockData.find(s => s.ticker === ticker);
+              const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
+              const stockInfos = await readCSV(path.resolve(__dirname, '../stock_info.csv'));
+              const stockInfo = stockInfos.find(s => s.ticker === ticker);
+              console.log(`Timeout expired, removing sell order at ${stockInfo.buyP} and creating new at ${sellPrice}`);
+              console.log(`old stocks.csv sell order price: ${stock.sellP}`);
+              if (parseFloat(sellPrice) !== parseFloat(stockInfo.buyP)) {
+                console.log(`buy order price should be $${buyPrice}`);
+                await removeOrder(ticker, 'sell', 1, stockInfo.buyP, `LP-${ticker}`, true);
+                if (sellPrice !== '-') {
+                  await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
+                }   
+              }
+            } finally {
+              // Decrease the count of active timeouts
+              activeTimeouts[ticker] = Math.max(activeTimeouts[ticker] - 1, 0);
+              console.log(`Completed timeout for ${ticker}. Remaining active timeouts: ${activeTimeouts[ticker]}`);
+            }
+          }, orderDelay); // 3 minutes delay (180,000 milliseconds)
+        } else {
+          console.log(`Skipped setting new timeout for ${ticker} (${action} order). Active timeouts limit reached: ${activeTimeouts[ticker]}`);
+        }
       }
 
 
@@ -1450,6 +1499,12 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
   };
 
   const placeRemainingOrder = async (ticker, action, quantity, price, userId) => {
+    if (action === 'sell') {
+      await updateUserInventory(userId, ticker, quantity, 'sell');
+    } else if (action === 'buy') {
+      await updateUserBalance(userId, -quantity * price);
+    }
+    
     console.log(`${userId} is writing to book`);
     const orderDir = path.resolve(__dirname, `../orders/${ticker}`);
     const userDir = path.resolve(__dirname, `../orders/users`);
@@ -1497,6 +1552,9 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
       const userCsvData = parse(newUserOrders);
       fs.writeFileSync(userOrderFile, userCsvData);
     }
+
+    // Introduce a 10ms delay after placing each order
+    await new Promise(resolve => setTimeout(resolve, 10));
   };
 
   const handleMarketOrder = async (oppositeOrders, action, ticker, price, userId) => {
@@ -1796,6 +1854,33 @@ const removeOrder = async (stock, action, quantity, price, userId, allOrders = f
 
   await writeCSV(userOrderFile, userOrders, ['stock', 'action', 'q', 'price', 'date']);
 };
+
+// Route to handle order cancellations
+router.post('/data/order-cancel', async (req, res) => {
+  if (!req.session.userId) {
+    console.log('User not logged in');
+    return res.status(401).send('User not logged in');
+  }
+
+  const { orders } = req.body;
+  const userId = req.session.userId;
+
+  try {
+    //console.log('Route orders:', JSON.stringify(orders, null, 2));
+    for (const order of orders) {
+      const { stock, action, q, price } = order;
+      //console.log(`route: cancelling users ${userId} stock ${stock} ${action} order at ${price} for ${q}`);
+      cancelOrder(stock, action, q, price, userId);
+    }
+
+    res.status(200).send('Orders cancelled successfully');
+  } catch (error) {
+    console.error('Error cancelling orders:', error);
+    res.status(500).send('Failed to cancel orders');
+  }
+});
+
+module.exports = router;
 
 const cancelOrder = async (ticker, action, quantity, price, userId) => {
   console.log(`cancelling users ${userId} stock ${ticker} ${action} order at ${price} for ${quantity}`);

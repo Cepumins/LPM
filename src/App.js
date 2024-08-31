@@ -150,9 +150,9 @@ function App() {
               <FontAwesomeIcon icon={faCoffee} className="h-8 w-8" />
             </div>
             <nav className="flex space-x-4 font-bold min-w-min">
-              <a href="/" className="text-lg hover:text-c-dark-white px-4 pl-6">Home</a>
-              <a href="/about" className="text-lg hover:text-c-dark-white px-4">About</a>
-              <a href="/settings" className="text-lg hover:text-c-dark-white px-4">Settings</a>
+              <a href="/" className="text-lg hover:text-c-dark-white px-4 pl-6">Market</a>
+              <a href="/inventory" className="text-lg hover:text-c-dark-white px-4">Inventory</a>
+              <a href="/orders" className="text-lg hover:text-c-dark-white px-4">Orders</a>
               {userId ? (
                 <>  
                   <span className="text-lg px-4 balance">{`${formatBalance(userBalance)}`}</span>
