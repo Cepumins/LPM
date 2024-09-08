@@ -4,14 +4,19 @@ import './Settings.css';
 
 function Settings() {
   const [stocks, setStocks] = useState([]);
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'default' });
-  const [sortedStocks, setSortedStocks] = useState([]);
+  //const [sortConfig, setSortConfig] = useState({ key: null, direction: 'default' });
+  //const [sortedStocks, setSortedStocks] = useState([]);
 
   useEffect(() => {
     axios.get('http://localhost:5001/api/stocks/data')
       .then(response => {
-        setStocks(response.data);
-        setSortedStocks(response.data); // Initialize sortedStocks with the fetched data
+        // Ensure the response data is an array
+        if (Array.isArray(response.data)) {
+          setStocks(response.data);
+        } else {
+          console.error('Error: Data fetched is not an array', response.data);
+          setStocks([]); // Set to empty array to prevent errors
+        }
       })
       .catch(error => console.error('Error fetching stocks:', error));
   }, []);
@@ -93,10 +98,12 @@ function Settings() {
 
     axios.post('http://localhost:5001/api/stocks/data/update', updatedStocks)
       .then(response => {
-        setStocks(response.data);
-        setSortedStocks(response.data); // Assuming the response contains updated stock data
-        //updateStockInfo(updatedStocks);
-        alert('Changes saved successfully');
+        if (Array.isArray(response.data)) {
+          setStocks(response.data); // Assuming the response contains updated stock data
+          alert('Changes saved successfully');
+        } else {
+          console.error('Error: Data returned is not an array', response.data);
+        }
       })
       .catch(error => console.error('Error saving changes:', error));
   };
@@ -114,6 +121,7 @@ function Settings() {
   };
   */
 
+  /*
   const handleSort = (key) => {
     let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -136,7 +144,7 @@ function Settings() {
       });
     }
     setSortedStocks(sortableStocks);
-  };
+  };*/
 
   /*
   const calculateL = (Pa, Pb, X_r, Y_r) => {
@@ -249,7 +257,6 @@ function Settings() {
     if (number === "-" || number === null || number === undefined) {
       return "-";
     }
-  
     // Otherwise, format the number with thousand separators
     return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "'");
   };
@@ -274,14 +281,14 @@ function Settings() {
           </tr>
         </thead>
         <tbody>
-          {sortedStocks.map((stock, index) => {
+          {Array.isArray(stocks) && stocks.map((stock, index) => {
             //const price = parseFloat((parseFloat(stock.y) / parseFloat(stock.x)).toFixed(2));
             //const price = calculateP(stock.x, stock.y);
             const x = parseFloat(stock.x);
             const y = parseFloat(stock.y);
             const Pa = parseFloat(stock.Pa);
             const Pb = parseFloat(stock.Pb);
-            //const price = y / x;
+            const price = y / x;
             //const mult = parseFloat(stock.mult);
             //const y = x * price;
             //const Pa = parseFloat((price / mult).toFixed(2));
@@ -323,7 +330,7 @@ function Settings() {
                     onChange={(e) => handleInputChange(index, 'Pb', e.target.value)}
                   />
                 </td>
-                <td className='text-c-white'>{formatNumberWithThousandSeparators(stock.price)}</td>
+                <td className='text-c-white'>{formatNumberWithThousandSeparators(price)}</td>
                 <td className='text-c-white'>{formatNumberWithThousandSeparators(stock.L)}</td>
                 <td className='text-c-white'>{formatNumberWithThousandSeparators(capReq)}</td>
                 <td className='text-c-white'>{formatNumberWithThousandSeparators(stock.buyP)}</td>

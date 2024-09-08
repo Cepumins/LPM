@@ -1,34 +1,18 @@
 [
   {
-    "ticker": "MSFT",
-    "quantity": 190
-  },
-  {
     "ticker": "TSLA",
-    "quantity": 12
-  },
-  {
-    "ticker": "GOOGL",
-    "quantity": 79
+    "quantity": 2
   },
   {
     "ticker": "LLY",
-    "quantity": 6
-  },
-  {
-    "ticker": "AMZN",
-    "quantity": 5
+    "quantity": 1
   },
   {
     "ticker": "NVDA",
-    "quantity": 7
+    "quantity": 2
   },
   {
-    "ticker": "XOM",
-    "quantity": 11
-  },
-  {
-    "ticker": "AAPL",
-    "quantity": 4
+    "ticker": "EUR",
+    "quantity": 500
   }
 ]

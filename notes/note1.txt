@@ -1,0 +1,253 @@
+so we have this order request: "
+// Route to handle order creation
+router.post('/data/order', async (req, res) => {
+  if (!req.session.userId) {
+    console.log('User not logged in');
+    return res.status(401).send('User not logged in');
+  }
+
+  const { ticker, orderType, quantity, price, orderExecution } = req.body;
+  const userId = req.session.userId;
+
+  try {
+    console.log("starting order request");
+    await orderMutex.acquire();  // Acquire the mutex lock
+    console.log("mutex lock acquired for order request")
+    console.log(`User ${userId} creating ${orderExecution} ${orderType} order for ${ticker} of ${quantity} at price of ${price}..`);
+    await addOrder(ticker, orderType, quantity, price, userId, orderExecution);
+    res.status(200).send(`Order created successfully`);
+    console.log(`User ${userId} created ${orderExecution} ${orderType} order for ${ticker} of ${quantity} at price of ${price}`);
+    await updateStockPrices(ticker); // Ensure this runs after order is added
+    console.log(`updating ${ticker} price from addOrder`);
+  } catch (error) {
+    console.error('Error creating order:', error);
+    res.status(500).send('Error creating order');
+  } finally {
+    console.log("ending order request");
+    orderMutex.release();  // Release the mutex lock
+    console.log("mutex lock released by order request")
+  }
+});
+"
+which calls the mutex: "
+// Utility function to delay execution
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Mutex (Mutual Exclusion) Lock
+class Mutex {
+  constructor() {
+    this.queue = [];
+    this.locked = false;
+  }
+
+  acquire() {
+    return new Promise((resolve) => {
+      const attempt = () => {
+        if (!this.locked) {
+          this.locked = true;
+          console.log('-Mutex acquired'); // Log when the mutex is acquired
+          resolve();
+        } else {
+          this.queue.push(attempt);
+          console.log('-Mutex is locked, queued attempt'); // Log when a request is queued
+        }
+      };
+      attempt();
+    });
+  }
+
+  release() {
+    if (this.queue.length > 0) {
+      const nextAttempt = this.queue.shift();
+      console.log('-Mutex released, dequeuing next attempt'); // Log when the mutex is released and next attempt is called
+      nextAttempt();
+    } else {
+      this.locked = false;
+      console.log('-Mutex released, no more queued attempts'); // Log when the mutex is released with no queued attempts
+    }
+  }
+}
+
+const orderMutex = new Mutex();
+"
+but if on the frontend we send start sending requests before the previous is finished we get this: "
+Trying to fulfill buy order at $1.5 of 16 quantity
+rereading sell orders
+[
+  {
+    q: '1',
+    price: '1.14',
+    user: 'LP-EUR',
+    date: '2024-09-07T12:15:15.374Z'
+  }
+]
+Fulfilled 1 of sell from LP-EUR order for EUR at price 1.14
+Updating user 7 balance by amount: -1.14
+Adding 1 of EUR to user 7 inventory
+Before adding: quantity = 284
+Before adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 284
+}
+After adding: quantity = 285
+After adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 285
+}
+Received stock: [object Object], x: 719, y: 1436.76
+updating only single line, ticker: EUR
+old line:  "EUR",720,1435.62,0.9,1.296,1.99,12174.12,1.12,1.14
+new line:  "EUR",719,1436.76,0.9,1.296,2,12174.14,1.12,1.14
+buyPrice: 1.12, sellPrice: 1.14
+Stock data for EUR updated successfully.
+not removing/adding sell order, as it would decrease from 1.14 to 1.14
+Skipped setting new timeout for EUR (buy order). Active timeouts limit reached: 1
+Trying to fulfill buy order at $1.5 of 15 quantity
+rereading sell orders
+[
+  {
+    q: '1',
+    price: '1.14',
+    user: 'LP-EUR',
+    date: '2024-09-07T12:15:15.374Z'
+  }
+]
+Fulfilled 1 of sell from LP-EUR order for EUR at price 1.14
+Updating user 7 balance by amount: -1.14
+Adding 1 of EUR to user 7 inventory
+Before adding: quantity = 285
+Before adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 285
+}
+After adding: quantity = 286
+After adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 286
+}
+Received stock: [object Object], x: 718, y: 1437.9
+updating only single line, ticker: EUR
+old line:  "EUR",719,1436.76,0.9,1.296,2,12174.14,1.12,1.14
+new line:  "EUR",718,1437.9,0.9,1.296,2,12174.15,1.12,1.14
+buyPrice: 1.12, sellPrice: 1.14
+Stock data for EUR updated successfully.
+not removing/adding sell order, as it would decrease from 1.14 to 1.14
+Skipped setting new timeout for EUR (buy order). Active timeouts limit reached: 1
+Trying to fulfill buy order at $1.5 of 14 quantity
+starting order request
+-Mutex is locked, queued attempt
+starting order request
+-Mutex is locked, queued attempt
+rereading sell orders
+[
+  {
+    q: '1',
+    price: '1.14',
+    user: 'LP-EUR',
+    date: '2024-09-07T12:15:15.374Z'
+  }
+]
+Fulfilled 1 of sell from LP-EUR order for EUR at price 1.14
+Updating user 7 balance by amount: -1.14
+Adding 1 of EUR to user 7 inventory
+Before adding: quantity = 286
+Before adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 286
+}
+After adding: quantity = 287
+After adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 287
+}
+Received stock: [object Object], x: 717, y: 1439.04
+updating only single line, ticker: EUR
+old line:  "EUR",718,1437.9,0.9,1.296,2,12174.15,1.12,1.14
+new line:  "EUR",717,1439.04,0.9,1.296,2.01,12174.16,1.12,1.14
+buyPrice: 1.12, sellPrice: 1.14
+Stock data for EUR updated successfully.
+not removing/adding sell order, as it would decrease from 1.14 to 1.14
+Skipped setting new timeout for EUR (buy order). Active timeouts limit reached: 1
+Trying to fulfill buy order at $1.5 of 13 quantity
+..
+"
+where fulfilling the first request it already receives the second and third request but keeps going: "
+Trying to fulfill buy order at $1.5 of 2 quantity
+rereading sell orders
+[
+  {
+    q: '1',
+    price: '1.15',
+    user: 'LP-EUR',
+    date: '2024-09-07T12:15:15.478Z'
+  }
+]
+Fulfilled 1 of sell from LP-EUR order for EUR at price 1.15
+Updating user 7 balance by amount: -1.15
+Adding 1 of EUR to user 7 inventory
+Before adding: quantity = 298
+Before adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 298
+}
+After adding: quantity = 299
+After adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 299
+}
+Received stock: [object Object], x: 705, y: 1452.75
+updating only single line, ticker: EUR
+old line:  "EUR",706,1451.6,0.9,1.296,2.06,12174.3,1.13,1.15
+new line:  "EUR",705,1452.75,0.9,1.296,2.06,12174.36,1.13,1.15
+buyPrice: 1.13, sellPrice: 1.15
+Stock data for EUR updated successfully.
+not removing/adding sell order, as it would decrease from 1.15 to 1.15
+Skipped setting new timeout for EUR (buy order). Active timeouts limit reached: 1
+Trying to fulfill buy order at $1.5 of 1 quantity
+rereading sell orders
+[
+  {
+    q: '1',
+    price: '1.15',
+    user: 'LP-EUR',
+    date: '2024-09-07T12:15:15.478Z'
+  }
+]
+Fulfilled 1 of sell from LP-EUR order for EUR at price 1.15
+Updating user 7 balance by amount: -1.15
+Adding 1 of EUR to user 7 inventory
+Before adding: quantity = 299
+Before adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 299
+}
+After adding: quantity = 300
+After adding: inventory entry = {
+  "ticker": "EUR",
+  "quantity": 300
+}
+Received stock: [object Object], x: 704, y: 1453.9
+updating only single line, ticker: EUR
+old line:  "EUR",705,1452.75,0.9,1.296,2.06,12174.36,1.13,1.15
+new line:  "EUR",704,1453.9,0.9,1.296,2.07,12174.41,1.13,1.15
+buyPrice: 1.13, sellPrice: 1.15
+Stock data for EUR updated successfully.
+not removing/adding sell order, as it would decrease from 1.15 to 1.15
+Skipped setting new timeout for EUR (buy order). Active timeouts limit reached: 1
+Fulfilled 1 of sell from LP-EUR order for EUR at price 1.15
+updating stock from addOrder
+!Updated stock_info.csv with new prices for EUR !
+User 7 created book buy order for EUR of 100 at price of 1.5
+!Updated /Users/kukijs/Desktop/LPM/backend/sorted_stock_info.csv with sorted stock data!
+!Updated stock_info.csv with new prices for EUR !
+updating EUR price from addOrder
+ending order request
+-Mutex released, dequeuing next attempt
+-Mutex is locked, queued attempt
+mutex lock released by order request
+!Updated /Users/kukijs/Desktop/LPM/backend/sorted_stock_info.csv with sorted stock data!
+starting order request
+-Mutex is locked, queued attempt
+!Updated stock_info.csv with new prices for META !
+"
+and when it finished, the next request doesnt get processed since it seems like the mutex is still locked.

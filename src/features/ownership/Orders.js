@@ -66,7 +66,7 @@ const UserOrders = ({ userId }) => {
       console.log('Orders to cancel:', ordersToCancel);
   
       // Send the selected orders to the backend for cancellation
-      await axios.post('http://localhost:5001/api/stocks/data/order-cancel', { orders: ordersToCancel });
+      await axios.post('http://localhost:5001/api/stocks/data/cancel-order', { orders: ordersToCancel });
   
       // Update frontend state to reflect the cancelled orders
       setOrders((prevOrders) => prevOrders.filter(order => !selectedOrders.includes(order.date)));

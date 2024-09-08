@@ -85,6 +85,11 @@ const ConfirmOrderPopup = forwardRef(({ orderDetails, priceDetails, onClose, onC
     //alert(`1`);
     try {
       //alert(`creating order..`);
+      onClose();
+      if (orderExecution === 'book') {
+        onConfirm();
+      }
+      
       await axios.post(`http://localhost:5001/api/stocks/data/order`, {
         ticker,
         orderType,
@@ -92,13 +97,10 @@ const ConfirmOrderPopup = forwardRef(({ orderDetails, priceDetails, onClose, onC
         price: parseFloat(price),
         orderExecution
       });
-      onClose();
-      if (orderExecution === 'book') {
-        onConfirm();
-      }
+
 
       //console.log(`Created ${orderExecution} ${orderType} order for ${quantity} shares of ${ticker} at $${price} each.`);
-      alert(`Created ${orderExecution} ${orderType} order for ${quantity} shares of ${ticker} at $${price} each.`);      
+      //alert(`Created ${orderExecution} ${orderType} order for ${quantity} shares of ${ticker} at $${price} each.`);      
 
       /*
       if (orderExecution === 'market') {
