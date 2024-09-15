@@ -5,6 +5,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLeftLong } from '@fortawesome/free-solid-svg-icons';
 //import axios from 'axios';
 
+const maxOrderSize = 100;
+
 const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInventory, userBalance }, ref) => {
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
@@ -24,15 +26,28 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
   }, [orderType, orderDetails.ticker, userInventory]);
 
   const handleQuantityChange = (e) => {
-    const value = e.target.value;
-    if (value.match(/^[0-9]*$/)) { // Ensure only integers
-      if (orderType === 'sell' && maxQuantity !== null && parseInt(value) > maxQuantity) {
+    let value = e.target.value;
+  
+    // Ensure only integers
+    if (value.match(/^[0-9]*$/)) { 
+      // Convert value to a number
+      value = parseInt(value, 10);
+  
+      // Adjust value to be within the range [1, 50]
+      if (value < 1) {
+        value = 1;
+      } else if (value > maxOrderSize) {
+        value = maxOrderSize;
+      }
+  
+      // Additional check for sell orders with maxQuantity limit
+      if (orderType === 'sell' && maxQuantity !== null && value > maxQuantity) {
         setQuantity(maxQuantity);
       } else {
         setQuantity(value);
       }
     }
-  };
+  };  
 
   const roundToTwoDecimalPlaces = (value) => {
     return Math.round(value * 100) / 100;
@@ -147,7 +162,7 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
                 type="number" 
                 value={quantity} 
                 onChange={handleQuantityChange} 
-                min="1" 
+                min="1"
                 step="1" 
                 onKeyDown={(e) => preventInvalidInput(e, false)} // Prevent invalid input for quantity
               />
@@ -169,7 +184,7 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
           <button 
             className="submit-button" 
             onClick={handleSubmit}
-            disabled={quantity === '' || price === '' || parseInt(quantity) <= 0 || parseFloat(price) <= 0}
+            disabled={quantity === '' || price === '' || parseInt(quantity) <= 0 || parseInt(quantity) > maxOrderSize || parseFloat(price) <= 0}
           >
             Submit
           </button>
