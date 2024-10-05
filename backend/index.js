@@ -1,9 +1,8 @@
+// index.js
 const express = require('express');
 const session = require('express-session');
 const cors = require('cors');
 const http = require('http');
-const stockRoutes = require('./routes/stockRoutes');
-const userRoutes = require('./routes/userRoutes');
 const { setupWebSocketServer } = require('./routes/websocket');
 const { clearSessions } = require('./users/activeSessions');
 
@@ -37,10 +36,13 @@ sessionStore.clear((err) => {
   }
 });
 
-app.use('/api/stocks', stockRoutes);
-app.use('/api/users', userRoutes);
-
 const server = http.createServer(app);
 setupWebSocketServer(server);
+
+const stockRoutes = require('./routes/stockRoutes');
+const userRoutes = require('./routes/userRoutes');
+
+app.use('/api/stocks', stockRoutes);
+app.use('/api/users', userRoutes);
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

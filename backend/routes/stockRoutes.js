@@ -1,42 +1,31 @@
+// stockRoutes.js
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
 const { parse } = require('json2csv');
 const http = require('http');
-const readline = require('readline');
+//const readline = require('readline');
 const { getWebSocketServer } = require('./websocket'); // Import the WebSocket getter function
-const { readCSV, writeCSV } = require('./csvUtils'); // Import the CSV utility functions
+const { readCSV, writeCSV, loadCSV } = require('./csvUtils'); // Import the CSV utility functions
 const e = require('cors');
 const { performance } = require('perf_hooks');
+const { parseFile } = require('./cache');
+const { accessFile, fileCache } = require('./cache'); // Import the CSV utility functions
+const { calculatePrices, calculateL } = require('./main');
+const { removeOrder, placeRemainingOrder, addOrder, cancelOrder, updateStockPrices } = require('./main');
 
 const router = express.Router();
 
-
-// --- SUPPORT ---
-const decimals = 2;
-//const minTax = 0 //Math.pow(10, -decimals);
-const taxP = 0.01;
-const dividendP = 0;
-const sellRound = 'up';
-const buyRound = 'down';
-
 const maxOrderSize = 100;
 
-let selectedStock = null; // Global variable to store the selected stock
-
-const activeTimeouts = {}; // Global timeout tracker
-const maxTimeouts = 1; // Maximum allowed timeouts per ticker
-
-// Utility function to delay execution
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Mutex (Mutual Exclusion) Lock
 class Mutex {
   constructor() {
     this.queue = [];
     this.locked = false;
-    this.currentHolder = "unknown"; // Track the current holder of the mutex
+    this.currentHolder = null; // Track the current holder of the mutex
   }
 
   async acquire(requestName = "unknown") {
@@ -48,7 +37,8 @@ class Mutex {
           console.log(`-Mutex acquired by ${requestName}`); // Log when the mutex is acquired
           resolve();
         } else {
-          this.queue.push(() => attempt(requestName)); // Pass the requestName to queued attempts
+          //this.queue.push(() => attempt(requestName)); // Pass the requestName to queued attempts
+          this.queue.push({ attempt, requestName });
           console.log(`-Mutex is locked, ${requestName} queued attempt`); // Log when a request is queued
         }
       };
@@ -56,22 +46,352 @@ class Mutex {
     });
   }
 
-  release() {
+  release(requestName = "unknown") {
+    // Log the release of the current mutex holder
+    console.log(`-Mutex released by ${requestName}`);
+
+    // Unlock the mutex
+    this.locked = false;
+    this.currentHolder = null;
+
     if (this.queue.length > 0) {
+      
+      /*
       const nextAttempt = this.queue.shift();
       const nextRequestName = this.currentHolder; // Save the current holder before updating
       console.log(`-Mutex released by ${nextRequestName}, dequeuing next attempt`); // Log when the mutex is released and next attempt is called
       nextAttempt();
+      */
+      const { attempt, requestName: nextRequestName } = this.queue.shift(); // Destructure queued attempt
+      console.log(`-Dequeuing next request: ${nextRequestName}`);
+      //this.currentHolder = requestName; // Set the new holder to the next queued request
+      //console.log(`-Mutex released by previous holder, dequeuing next attempt for ${requestName}`); // Log when the mutex is released and next attempt is called
+      //attempt(); // Try to acquire the mutex for the next request in queue
+      //this.locked = false; // Make sure mutex is unlocked before next attempt
+      setTimeout(attempt, 0); // This allows the next attempt to be processed asynchronously
     } else {
-      console.log(`-Mutex released by ${this.currentHolder}, no more queued attempts`); // Log when the mutex is released with no queued attempts
-      this.locked = false;
-      this.currentHolder = "unknown"; // Reset the current holder
+      //console.log(`-MUT released by ${this.currentHolder}, no more queued attempts`); // Log when the mutex is released with no queued attempts
+      //this.locked = false;
+      //this.currentHolder = "unknown"; // Reset the current holder
+      console.log(`-Mutex fully released, no more queued attempts`);
     }
   }
 }
 
 const orderMutex = new Mutex();
 
+// --- API ---
+// Main route to provide endpoint information
+router.get('/', (req, res) => {
+  res.json({
+    message: "Full Stocks API",
+    endpoints: {
+      stock_info: "/api/stocks/info",
+      stock_data: "/api/stocks/data",
+      update_stock_data: "/api/stocks/data/update",
+      buy_stock: "/api/stocks/data/buy",
+      sell_stock: "/api/stocks/data/sell"
+    }
+  });
+});
+
+// Route to get stock_info.csv data
+router.get('/info', (req, res) => {
+  const stockInfo = [];
+
+  fs.createReadStream(path.resolve(__dirname, '../sorted_stock_info.csv'))
+    .pipe(csv())
+    .on('data', (row) => {
+      stockInfo.push(row);
+    })
+    .on('end', () => {
+      res.json(stockInfo);
+    });
+});
+
+
+router.get('/data', async (req, res) => {
+  try {
+    // Use the accessFile function to read the stocks.csv file from memory if available
+    const stockData = await accessFile(path.resolve(__dirname, '../'), 'stocks.csv');
+
+    // Optionally process the data (if needed)
+    const parsedData = stockData.map((row) => {
+      return {
+        ...row,
+        x: parseInt(row.x),
+        y: parseFloat(row.y),
+        Pa: parseFloat(row.Pa),
+        Pb: parseFloat(row.Pb),
+        price: parseFloat(row.price),
+        L: parseFloat(row.L),
+        buyP: parseFloat(row.buyP),
+        sellP: parseFloat(row.sellP),
+      };
+    });
+
+    // Send the parsed data as JSON
+    res.json(parsedData);
+  } catch (error) {
+    res.status(500).send(`Error reading stocks.csv data: ${error.message}`);
+  }
+});
+
+// Route to update stocks.csv data
+router.post('/data/update', async (req, res) => {
+  try {
+    await orderMutex.acquire();  // Acquire the mutex lock
+    const stockFilePath = path.resolve(__dirname, '../stocks.csv');
+    const oldStockData = await readCSV(stockFilePath);
+    
+    const oldPrices = oldStockData.reduce((acc, stock) => {
+      acc[stock.ticker] = {
+        buyP: parseFloat(stock.buyP),
+        sellP: parseFloat(stock.sellP)
+      };
+      return acc;
+    }, {});
+
+    // Sequentially update stock data
+    const updatedStockData = [];
+    for (const stock of req.body) {
+      const ticker = stock.ticker;
+
+      // Read old prices if they exist
+      const oldBuyP = oldPrices[ticker] ? oldPrices[ticker].buyP : null;
+      const oldSellP = oldPrices[ticker] ? oldPrices[ticker].sellP : null;
+
+      // Log old prices for debugging
+      console.log(`Old stocks.csv prices for ${ticker}: buyP=${oldBuyP}, sellP=${oldSellP}`);
+
+      await removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`, true);
+      await removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`, true);
+
+      /*
+      // Remove old buy LP order if the price is not null
+      if (oldBuyP !== null && fs.existsSync(buyFile)) {
+        try {
+          removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`);
+          console.log(`Old buy LP order removed successfully for ${ticker} (update)`);
+        } catch (err) {
+          console.error(`Error removing old buy LP order for ${ticker} (update):`, err);
+        }
+      }
+
+      // Remove old sell LP order if the price is not null
+      if (oldSellP !== null && fs.existsSync(sellFile)) {
+        try {
+          removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`);
+          console.log(`Old sell LP order removed successfully for ${ticker} (update)`);
+        } catch (err) {
+          console.error(`Error removing old sell LP order for ${ticker} (update):`, err);
+        }
+      }*/
+
+      const x = parseInt(stock.x);
+      const y = parseFloat(stock.y);
+      const Pa = parseFloat(stock.Pa);
+      const Pb = parseFloat(stock.Pb);
+      const price = y / x;
+      const L = calculateL(Pa, Pb, x, y);
+      const virtualX = L / Math.sqrt(Pb);
+      const virtualY = L * Math.sqrt(Pa);
+      const buyP = calculatePrices('buy', x, y, virtualX, virtualY);
+      const sellP = calculatePrices('sell', x, y, virtualX, virtualY);
+
+      console.log(`New stocks.csv prices for ${ticker}: buyP=${buyP}, sellP=${sellP}`);
+
+      //addOrder(ticker, 'buy', 1, buyP, `LP-${ticker}`, 'book');
+      //addOrder(ticker, 'sell', 1, sellP, `LP-${ticker}`, 'book');
+      placeRemainingOrder(ticker, "buy", 1, buyP, `LP-${ticker}`);
+      placeRemainingOrder(ticker, "sell", 1, sellP, `LP-${ticker}`);
+
+      // Push updated stock data to the results array
+      updatedStockData.push({
+        ticker: stock.ticker,
+        x: parseInt(x.toFixed(2)),
+        y: parseFloat(y.toFixed(2)),
+        Pa: parseFloat(Pa.toFixed(5)),
+        Pb: parseFloat(Pb.toFixed(5)),
+        price: parseFloat(price.toFixed(2)),
+        L: parseFloat(L.toFixed(2)),
+        buyP: parseFloat(buyP.toFixed(2)),
+        sellP: parseFloat(sellP.toFixed(2))
+      });
+    };
+
+    
+    const fields = ['ticker', 'x', 'y', 'Pa', 'Pb', 'price', 'L', 'buyP', 'sellP'];
+    const opts = { fields };  
+
+    const csvData = parse(updatedStockData, opts);
+    console.log(`new csv data: ${csvData}`);
+    fs.writeFileSync(stockFilePath, csvData);
+
+    res.status(200).send('Stock data updated successfully');
+  } catch (err) {
+    console.error('Error updating stock data:', err);
+    res.status(500).send('Error updating stock data');
+  } finally {
+    orderMutex.release();  // Release the mutex lock
+  }
+});
+
+
+// Route to handle order creation
+router.post('/data/order', async (req, res) => {
+  if (!req.session.userId) {
+    console.log('User not logged in');
+    return res.status(401).send('User not logged in');
+  }
+
+  const { ticker, orderType, price, orderExecution } = req.body;
+  let { quantity } = req.body;
+  quantity = Math.max(Math.min(quantity, maxOrderSize), 1);  
+  const userId = req.session.userId;
+  const requestName = `User ${userId} ${orderExecution} ${orderType} order for ${quantity} ${ticker} at $${price}`;
+
+  try {
+    console.log("starting order request");
+    await orderMutex.acquire(requestName);  // Acquire the mutex lock with the request name
+    console.log("mutex lock acquired for order request")
+    console.log(`User ${userId} creating ${orderExecution} ${orderType} order for ${ticker} of ${quantity} at price of ${price}..`);
+    await addOrder(ticker, orderType, quantity, price, userId, orderExecution);
+    
+
+    //await updateStockPrices(ticker); // Ensure this runs after order is added
+    //console.log(`updating ${ticker} price from addOrder`);
+    res.status(200).send(`Order created successfully`);
+    console.log(`User ${userId} created ${orderExecution} ${orderType} order for ${ticker} of ${quantity} at price of ${price}`);
+  } catch (error) {
+    console.error('Error creating order:', error);
+    res.status(500).send('Error creating order');
+  } finally {
+    console.log("ending order request");
+    orderMutex.release(requestName);  // Release the mutex lock
+    console.log("mutex lock released by order request")
+    //timer.reportAll();
+  }
+});
+
+
+// Route to trigger removing an order
+router.post('/data/remove-order', async (req, res) => {
+  try {
+    if (!req.session.userId) {
+      console.log('User not logged in');
+      return res.status(401).send('User not logged in');
+    }
+
+    const { ticker, orderType, quantity, price } = req.body;
+    const userId = req.session.userId;
+
+    await orderMutex.acquire();  // Acquire the mutex lock
+    await removeOrder(ticker, orderType, quantity, price, userId);
+    res.status(200).send('Order removed successfully');
+    console.log(`User ${userId} removed ${orderType} order for ${ticker} of ${quantity} at price of ${price}`);
+  } catch (error) {
+    console.error('Error removing order:', error);
+    res.status(500).send('Error removing order');
+  } finally {
+    orderMutex.release();  // Release the mutex lock
+  }
+});
+
+// Route to handle order cancellations
+router.post('/data/cancel-order', async (req, res) => {
+  if (!req.session.userId) {
+    console.log('User not logged in');
+    return res.status(401).send('User not logged in');
+  }
+
+  const { orders } = req.body;
+  const userId = req.session.userId;
+  const requestName = `User ${userId} cancelling orders`;
+
+  try {
+    await orderMutex.acquire(requestName);  // Acquire the mutex lock
+    //console.log('Route orders:', JSON.stringify(orders, null, 2));
+    for (const order of orders) {
+      const { stock, action, q, price } = order;
+      console.log(`route: cancelling users ${userId} stock ${stock} ${action} order at ${price} for ${q}`);
+      await cancelOrder(stock, action, q, price, userId);
+    }
+
+    res.status(200).send('Orders cancelled successfully');
+  } catch (error) {
+    console.error('Error cancelling orders:', error);
+    res.status(500).send('Failed to cancel orders');
+  } finally {
+    orderMutex.release(requestName);  // Release the mutex lock
+  }
+});
+
+// --- UPDATING ---
+// Route to trigger stock price update
+router.post('/update-stock-prices', async (req, res) => {
+  try {
+    const { ticker, updatedTime } = req.body;
+    console.log(`REQURST - TICKER: ${ticker}, UPDATED TIME: ${updatedTime}`);
+
+    await orderMutex.acquire();
+    selectedStock = ticker; // Set the selected stock
+    console.log(`REQUEST - Updating stock price for ${ticker}`);
+    const updatedStockData = await updateStockPrices(ticker);
+    if (updatedStockData) {
+      res.status(200).send(`Stock prices for ${ticker} updated successfully`);
+    } else {
+      res.status(404).send(`No orders found for ${ticker}`);
+    }
+  } catch (error) {
+    console.error('Error updating stock prices:', error);
+    res.status(500).send('Error updating stock prices');
+  } finally {
+    selectedStock = null; // Reset the selected stock after updating
+    orderMutex.release();  // Release the mutex lock
+  }
+});
+
+/*
+// --- SUPPORT ---
+const decimals = 2;
+//const minTax = 0 //Math.pow(10, -decimals);
+const taxP = 0.01;
+const dividendP = 0;
+const sellRound = 'up';
+const buyRound = 'down';
+
+
+
+let selectedStock = null; // Global variable to store the selected stock
+
+const activeTimeouts = {}; // Global timeout tracker
+const maxTimeouts = 1; // Maximum allowed timeouts per ticker*/
+
+
+
+// Cache object to hold CSV data and associated timers
+//const fileCache = {};
+//const fileTimers = {};
+
+// Global cache object
+//const cache = {};
+
+// Cache entry structure
+// cache = {
+//   fileName: {
+//     data: <file content>,
+//     lastAccessed: <timestamp>,
+//     timer: <expiry timer reference>,
+//   },
+// };
+
+// Utility function to delay execution
+//const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+
+
+/*
 // function timer
 class MultiFunctionTimer {
   constructor() {
@@ -168,24 +488,12 @@ const roundDown = (amount, decimals) => {
 const roundReg = (amount, decimals) => {
   const factor = Math.pow(10, decimals);
   return Math.round(amount * factor) / factor;
-};
+};*/
 
 
-// --- API ---
-// Main route to provide endpoint information
-router.get('/', (req, res) => {
-  res.json({
-    message: "Full Stocks API",
-    endpoints: {
-      stock_info: "/api/stocks/info",
-      stock_data: "/api/stocks/data",
-      update_stock_data: "/api/stocks/data/update",
-      buy_stock: "/api/stocks/data/buy",
-      sell_stock: "/api/stocks/data/sell"
-    }
-  });
-});
 
+
+/*
 // Function to make internal API calls
 const internalApiCall = (path, data, callback) => {
   const postData = JSON.stringify(data);
@@ -218,175 +526,39 @@ const internalApiCall = (path, data, callback) => {
 
   req.write(postData);
   req.end();
-};
+};*/
 
-// Route to get stock_info.csv data
-router.get('/info', (req, res) => {
-  const stockInfo = [];
 
-  fs.createReadStream(path.resolve(__dirname, '../sorted_stock_info.csv'))
-    .pipe(csv())
-    .on('data', (row) => {
-      stockInfo.push(row);
-    })
-    .on('end', () => {
-      res.json(stockInfo);
-    });
-});
 
 // Route to get stocks.csv data
+/*
 router.get('/data', (req, res) => {
-  const stockData = [];
-
-  fs.createReadStream(path.resolve(__dirname, '../stocks.csv'))
-    .pipe(csv())
-    .on('data', (row) => {
-      row.x = parseFloat(row.x);
-      row.y = parseFloat(row.y);
-      row.Pa = parseFloat(row.Pa);
-      row.Pb = parseFloat(row.Pb);
-      row.price = parseFloat(row.price);
-      row.L = parseFloat(row.L);
-      row.buyP = parseFloat(row.buyP);
-      row.sellP = parseFloat(row.sellP);
-      stockData.push(row);
-    })
-    .on('end', () => {
-      res.json(stockData);
-    });
-});
-
-// Route to update stocks.csv data
-router.post('/data/update', async (req, res) => {
   try {
-    await orderMutex.acquire();  // Acquire the mutex lock
-    const stockFilePath = path.resolve(__dirname, '../stocks.csv');
-    const oldStockData = await readCSV(stockFilePath);
-    
-    const oldPrices = oldStockData.reduce((acc, stock) => {
-      acc[stock.ticker] = {
-        buyP: parseFloat(stock.buyP),
-        sellP: parseFloat(stock.sellP)
-      };
-      return acc;
-    }, {});
+    const stockData = [];
 
-    // Sequentially update stock data
-    const updatedStockData = [];
-    for (const stock of req.body) {
-      const ticker = stock.ticker;
-
-      // Read old prices if they exist
-      const oldBuyP = oldPrices[ticker] ? oldPrices[ticker].buyP : null;
-      const oldSellP = oldPrices[ticker] ? oldPrices[ticker].sellP : null;
-
-      // Log old prices for debugging
-      console.log(`Old stocks.csv prices for ${ticker}: buyP=${oldBuyP}, sellP=${oldSellP}`);
-
-      await removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`, true);
-      await removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`, true);
-
-      /*
-      // Remove old buy LP order if the price is not null
-      if (oldBuyP !== null && fs.existsSync(buyFile)) {
-        try {
-          removeOrder(ticker, 'buy', 1, oldBuyP, `LP-${ticker}`);
-          console.log(`Old buy LP order removed successfully for ${ticker} (update)`);
-        } catch (err) {
-          console.error(`Error removing old buy LP order for ${ticker} (update):`, err);
-        }
-      }
-
-      // Remove old sell LP order if the price is not null
-      if (oldSellP !== null && fs.existsSync(sellFile)) {
-        try {
-          removeOrder(ticker, 'sell', 1, oldSellP, `LP-${ticker}`);
-          console.log(`Old sell LP order removed successfully for ${ticker} (update)`);
-        } catch (err) {
-          console.error(`Error removing old sell LP order for ${ticker} (update):`, err);
-        }
-      }*/
-
-      const x = parseFloat(stock.x);
-      const y = parseFloat(stock.y);
-      const Pa = parseFloat(stock.Pa);
-      const Pb = parseFloat(stock.Pb);
-      const price = y / x;
-      const L = calculateL(Pa, Pb, x, y);
-      const virtualX = L / Math.sqrt(Pb);
-      const virtualY = L * Math.sqrt(Pa);
-      const buyP = calculatePrices('buy', x, y, virtualX, virtualY);
-      const sellP = calculatePrices('sell', x, y, virtualX, virtualY);
-
-      console.log(`New stocks.csv prices for ${ticker}: buyP=${buyP}, sellP=${sellP}`);
-
-      //addOrder(ticker, 'buy', 1, buyP, `LP-${ticker}`, 'book');
-      //addOrder(ticker, 'sell', 1, sellP, `LP-${ticker}`, 'book');
-      placeRemainingOrder(ticker, "buy", 1, buyP, `LP-${ticker}`);
-      placeRemainingOrder(ticker, "sell", 1, sellP, `LP-${ticker}`);
-
-      // Push updated stock data to the results array
-      updatedStockData.push({
-        ticker: stock.ticker,
-        x: parseFloat(x.toFixed(2)),
-        y: parseFloat(y.toFixed(2)),
-        Pa: parseFloat(Pa.toFixed(5)),
-        Pb: parseFloat(Pb.toFixed(5)),
-        price: parseFloat(price.toFixed(2)),
-        L: parseFloat(L.toFixed(2)),
-        buyP: parseFloat(buyP.toFixed(2)),
-        sellP: parseFloat(sellP.toFixed(2))
-      });
-    };
-
-    
-    const fields = ['ticker', 'x', 'y', 'Pa', 'Pb', 'price', 'L', 'buyP', 'sellP'];
-    const opts = { fields };  
-
-    const csvData = parse(updatedStockData, opts);
-    console.log(`new csv data: ${csvData}`);
-    fs.writeFileSync(stockFilePath, csvData);
-
-    /*
-    // Read existing stock_info.csv data to preserve the 'type' field
-    const existingStockInfoData = [];
-    fs.createReadStream(path.resolve(__dirname, '../stock_info.csv'))
+    fs.createReadStream(path.resolve(__dirname, '../stocks.csv'))
       .pipe(csv())
       .on('data', (row) => {
-        existingStockInfoData.push(row);
+        row.x = parseInt(row.x);
+        row.y = parseFloat(row.y);
+        row.Pa = parseFloat(row.Pa);
+        row.Pb = parseFloat(row.Pb);
+        row.price = parseFloat(row.price);
+        row.L = parseFloat(row.L);
+        row.buyP = parseFloat(row.buyP);
+        row.sellP = parseFloat(row.sellP);
+        stockData.push(row);
       })
       .on('end', () => {
-        const stockInfoData = updatedStockData.map(stock => {
-          const existingStock = existingStockInfoData.find(s => s.ticker === stock.ticker);
-          return {
-            ticker: stock.ticker,
-            buyP: stock.buyP,
-            sellP: stock.sellP,
-            type: existingStock ? existingStock.type : ''
-          };
-        });
-
-        const infoFields = ['ticker', 'buyP', 'sellP', 'type'];
-        const infoOpts = { fields: infoFields };
-        const csvInfoData = parse(stockInfoData, infoOpts);
-        fs.writeFileSync(path.resolve(__dirname, '../stock_info.csv'), csvInfoData);
-
-        // Broadcast updated stock data to all connected WebSocket clients
-        const wss = getWebSocketServer(); // Get the WebSocket server instance
-        wss.broadcast({ type: 'update', data: updatedStockData });
-
-        res.status(200).send(updatedStockData);
+        res.json(stockData);
       });
-      */
-    res.status(200).send('Stock data updated successfully');
-  } catch (err) {
-    console.error('Error updating stock data:', err);
-    res.status(500).send('Error updating stock data');
-  } finally {
-    orderMutex.release();  // Release the mutex lock
-  }
-});
+    } catch (error) {
+      res.status(500).send(`Error reading stocks.csv data: ${error.message}`);
+    }
+});*/
 
+
+/*
 // --- LP MATH ---
 const calculatePrices = (action, X, Y, virtualX, virtualY) => {
   timer.start('calculatePrices');
@@ -460,7 +632,7 @@ const calculatePrices = (action, X, Y, virtualX, virtualY) => {
   }
   const newK = newTotalX * newFullY;
   //console.log(`New K: ${newK}`);
-  */
+
 
   timer.stop('calculatePrices');
   return P;
@@ -568,7 +740,7 @@ const updateStockLine = async (ticker, updatedStock) => {
     writeStream.end();
   } catch (error) {
     console.error('Error updating stock line:', error);
-    res.status(500).send('Internal server error');
+    throw error; // Throwing allows the calling function to handle the error and manage the mutex
   } finally {
     // Ensure the timer stops even if there is an early return or an error
     timer.stop('updateStockLine');
@@ -609,7 +781,7 @@ const getNewPrices = async (stock, newX, newY) => {
   } else {
     buyPrice = '-';
   }
-  */
+  
   let buyPrice = roundDown(calculatePrices('buy', x, y, virtualX, virtualY), 2);
   if (y < buyPrice) {
     buyPrice = '-';
@@ -623,17 +795,6 @@ const getNewPrices = async (stock, newX, newY) => {
     sellPrice = '-';
     price = 999999999.99;
   }
-  
-  
-  /*
-  if (newX == 0) {
-    buyPrice = "NA";
-  } else if (newX == 1) {
-    buyPrice = buyPrice * 2.5;
-  } else if (newX == 2) {
-    buyPrice = buyPrice * 1.5;
-  }
-  */
   
   //console.log('in prices func');
   
@@ -655,7 +816,7 @@ const getNewPrices = async (stock, newX, newY) => {
   const fields = ['ticker', 'x', 'y', 'Pa', 'Pb', 'price', 'L', 'buyP', 'sellP'];
   const opts = { fields };
   const csvData = parse(updatedStockData, opts);
-  fs.writeFileSync(path.resolve(__dirname, '../stocks.csv'), csvData);*/
+  fs.writeFileSync(path.resolve(__dirname, '../stocks.csv'), csvData);
   await updateStockLine(ticker, updatedStock);
 
   console.log(`buyPrice: ${buyPrice}, sellPrice: ${sellPrice}`);
@@ -683,10 +844,8 @@ const updateUserBalance = async (userId, amount) => {
       wss.broadcast({ type: 'balanceUpdate', userId, balance: user.balance });
     } catch (error) {
       console.error('Error updating balance:', error);
-      res.status(500).send('Error updating balance');
-    } /*finally {
-      orderMutex.release();  // Release the mutex lock
-    }*/
+      throw error; // Throwing allows the calling function to handle the error and manage the mutex
+    } 
   }
   timer.stop('updateUserBalance');
 };
@@ -754,12 +913,10 @@ const updateUserInventory = async (userId, ticker, quantity, action) => {
     wss.broadcast({ type: 'inventoryUpdate', userId, inventory: inventory });
   } catch (error) {
     console.error('Error updating inventory:', error);
-    res.status(500).send('Error updating inventory');
-  } /*finally {
-    orderMutex.release();  // Release the mutex lock
-  }*/
+    throw error; // Throwing allows the calling function to handle the error and manage the mutex
+  }
   timer.stop('updateUserInventory');
-};
+};*/
 
 // old buy/sell handling
 /*
@@ -873,7 +1030,7 @@ router.post('/data/sell', async (req, res) => {
 });
 */
 
-
+/*
 // --- ORDER HANDLING ---
 // Function to insert order in the correct position
 const insertOrder = (orders, newOrder, orderType) => {
@@ -906,7 +1063,7 @@ const insertOrder = (orders, newOrder, orderType) => {
   }
   timer.stop('insertOrder');
   return orders;
-};
+};*/
 
 /*
 // Route to fulfill orders
@@ -1056,40 +1213,8 @@ const fulfillOrder = async (req, res, frontendTicker, type, askerAction, fronten
 }
 */
 
-// Route to handle order creation
-router.post('/data/order', async (req, res) => {
-  if (!req.session.userId) {
-    console.log('User not logged in');
-    return res.status(401).send('User not logged in');
-  }
 
-  const { ticker, orderType, price, orderExecution } = req.body;
-  let { quantity } = req.body;
-  quantity = Math.max(Math.min(quantity, maxOrderSize), 1);  
-  const userId = req.session.userId;
-  const requestName = `User ${userId} ${orderExecution} ${orderType} order for ${quantity} ${ticker} at $${price}`;
-
-  try {
-    console.log("starting order request");
-    await orderMutex.acquire(requestName);  // Acquire the mutex lock with the request name
-    console.log("mutex lock acquired for order request")
-    console.log(`User ${userId} creating ${orderExecution} ${orderType} order for ${ticker} of ${quantity} at price of ${price}..`);
-    await addOrder(ticker, orderType, quantity, price, userId, orderExecution);
-    timer.reportAll();
-    res.status(200).send(`Order created successfully`);
-    console.log(`User ${userId} created ${orderExecution} ${orderType} order for ${ticker} of ${quantity} at price of ${price}`);
-    await updateStockPrices(ticker); // Ensure this runs after order is added
-    console.log(`updating ${ticker} price from addOrder`);
-  } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).send('Error creating order');
-  } finally {
-    console.log("ending order request");
-    orderMutex.release();  // Release the mutex lock
-    console.log("mutex lock released by order request")
-  }
-});
-
+/*
 // OLD Function to add order
 const addOrderOld = async (ticker, action, quantity, price, userId, type) => {
   const validateOrder = async (ticker, action, price, userId) => {
@@ -1172,7 +1297,7 @@ const addOrderOld = async (ticker, action, quantity, price, userId, type) => {
     console.log(`Invalid userId: ${userId}`);
     console.log(`Function trying to: User ${userId} create ${action} order for ${ticker} of ${quantity} at price of ${price}`);
     return;
-  }*/
+  }
   if (!await validateOrder(ticker, action, price, userId)) {
     console.log(`Validation failed for order: User ${userId} ${action} ${ticker} ${quantity} at ${price}`);
     return;
@@ -1210,7 +1335,7 @@ const addOrderOld = async (ticker, action, quantity, price, userId, type) => {
 
     if (isNaN(giverQuantity) || isNaN(giverPrice)) {
       return res.status(500).send('Invalid order data');
-    }*/
+    }
 
     if (parseFloat(price) !== giverPrice) {
       console.log('Price mismatch');
@@ -1279,7 +1404,7 @@ const addOrderOld = async (ticker, action, quantity, price, userId, type) => {
         const fields = ['ticker', 'x', 'y', 'Pa', 'Pb', 'price', 'L', 'buyP', 'sellP'];
         const opts = { fields };
         const csvData = parse(updatedStockData, opts);
-        fs.writeFileSync(path.resolve(__dirname, '../stocks.csv'), csvData);*/
+        fs.writeFileSync(path.resolve(__dirname, '../stocks.csv'), csvData);
       }
     } else {
       await removeOrder(ticker, oppositeAction, 1, giverPrice, giverId);
@@ -1363,7 +1488,7 @@ const addOrderOld = async (ticker, action, quantity, price, userId, type) => {
                   const csvData = parse(updatedStockData, opts);
                   //console.log('3');
                   fs.writeFileSync(path.resolve(__dirname, '../stocks.csv'), csvData);
-                  */
+                  
                   //console.log(`Updated LP values for ${ticker}`);
                 }
               } else {
@@ -1465,8 +1590,9 @@ const addOrderOld = async (ticker, action, quantity, price, userId, type) => {
   //await updateStockPrices(ticker); // Ensure this runs after order is added
   //console.log(`updating ${ticker} price from addOrder`);
 };
+*/
 
-
+/*
 // Main function to add order
 const addOrder = async (ticker, action, quantity, price, userId, type) => {
   try {
@@ -1563,7 +1689,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
       const csvData = parse(updatedStockData, opts);
 
       // Write the updated data back to the CSV file
-      await fs.writeFileSync(filePath, csvData);*/
+      await fs.writeFileSync(filePath, csvData);
 
       if (taxToOne > 0) {
         await updateUserBalance("1", taxToOne);
@@ -1656,7 +1782,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
         if (taxToOneRounded > 0) {
           await updateUserBalance("1", taxToOneRounded);
         }
-        */
+        
       }
       timer.stop('updateAskerDetails');
     };
@@ -1738,7 +1864,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
                 if (buyPrice !== '-') {
                   await addOrder(ticker, 'buy', 1, newBuyP, `LP-${ticker}`, 'book');
                 }
-                */
+                
                 const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
                 const stock = stockData.find(s => s.ticker === ticker);
                 const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
@@ -1793,7 +1919,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
                 if (sellPrice !== '-') {
                   await addOrder(ticker, 'sell', 1, newSellP, `LP-${ticker}`, 'book');
                 }
-                */
+                
                 const stockData = await readCSV(path.resolve(__dirname, '../stocks.csv'));
                 const stock = stockData.find(s => s.ticker === ticker);
                 const { buyPrice, sellPrice } = await getNewPrices(stock, parseFloat(stock.x), parseFloat(stock.y));
@@ -1875,7 +2001,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
         }
       } catch (error) {
         console.error('Error handling market order:', error);
-        res.status(500).send('Internal server error');
+        throw error; // Throwing allows the calling function to handle the error and manage the mutex
       } finally {
         // Ensure the timer stops even if there is an early return or an error
         timer.stop('handleMarketOrder');
@@ -1938,7 +2064,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
         }
       } catch (error) {
         console.error('Error handling market order:', error);
-        res.status(500).send('Internal server error');
+        throw error; // Throwing allows the calling function to handle the error and manage the mutex
       } finally {
         // Ensure the timer stops even if there is an early return or an error
         timer.stop('handleBookOrder');
@@ -1970,12 +2096,15 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
     
   } catch (error) {
     console.error('Error adding order:', error);
-    res.status(500).send('Error adding order');
+    //res.status(500).send('Error adding order');
+    throw error; // Throwing allows the calling function to handle the error and manage the mutex
   } finally {
     timer.stop('addOrder');
+    timer.reportAll();
   }
-};
+};*/
 
+/*
 const placeRemainingOrder = async (ticker, action, quantity, price, userId) => {
   if (action === 'sell') {
     await updateUserInventory(userId, ticker, quantity, 'sell');
@@ -2033,7 +2162,7 @@ const placeRemainingOrder = async (ticker, action, quantity, price, userId) => {
 
   // Introduce a 10ms delay after placing each order
   await new Promise(resolve => setTimeout(resolve, 10));
-};
+};*/
 
 
 // (old) Function to add order
@@ -2114,30 +2243,9 @@ const addOrderOld = async (stock, action, quantity, price, userId) => {
   }
 };
 */
-  
-// Route to trigger removing an order
-router.post('/data/remove-order', async (req, res) => {
-  if (!req.session.userId) {
-    console.log('User not logged in');
-    return res.status(401).send('User not logged in');
-  }
 
-  const { ticker, orderType, quantity, price } = req.body;
-  const userId = req.session.userId;
 
-  try {
-    await orderMutex.acquire();  // Acquire the mutex lock
-    await removeOrder(ticker, orderType, quantity, price, userId);
-    res.status(200).send('Order removed successfully');
-    console.log(`User ${userId} removed ${orderType} order for ${ticker} of ${quantity} at price of ${price}`);
-  } catch (error) {
-    console.error('Error removing order:', error);
-    res.status(500).send('Error removing order');
-  } finally {
-    orderMutex.release();  // Release the mutex lock
-  }
-});
-
+/*
 const removeOrder = async (stock, action, quantity, price, userId, allOrders = false) => {
   timer.start('removeOrder');
   const orderDir = path.resolve(__dirname, `../orders/${stock}`);
@@ -2211,39 +2319,13 @@ const removeOrder = async (stock, action, quantity, price, userId, allOrders = f
 
   await writeCSV(userOrderFile, userOrders, ['stock', 'action', 'q', 'price', 'date']);
   timer.stop('removeOrder');
-};
+};*/
 
-// Route to handle order cancellations
-router.post('/data/cancel-order', async (req, res) => {
-  if (!req.session.userId) {
-    console.log('User not logged in');
-    return res.status(401).send('User not logged in');
-  }
 
-  const { orders } = req.body;
-  const userId = req.session.userId;
-  const requestName = `User ${userId} cancelling orders`;
 
-  try {
-    await orderMutex.acquire(requestName);  // Acquire the mutex lock
-    //console.log('Route orders:', JSON.stringify(orders, null, 2));
-    for (const order of orders) {
-      const { stock, action, q, price } = order;
-      console.log(`route: cancelling users ${userId} stock ${stock} ${action} order at ${price} for ${q}`);
-      await cancelOrder(stock, action, q, price, userId);
-    }
+//module.exports = router;
 
-    res.status(200).send('Orders cancelled successfully');
-  } catch (error) {
-    console.error('Error cancelling orders:', error);
-    res.status(500).send('Failed to cancel orders');
-  } finally {
-    orderMutex.release();  // Release the mutex lock
-  }
-});
-
-module.exports = router;
-
+/*
 const cancelOrder = async (ticker, action, quantity, price, userId) => {
   console.log(`cancelling users ${userId} stock ${ticker} ${action} order at ${price} for ${quantity}`);
   await removeOrder(ticker, action, quantity, price, userId);
@@ -2254,92 +2336,77 @@ const cancelOrder = async (ticker, action, quantity, price, userId) => {
   }
   await updateStockPrices(ticker);
   console.log('updating stock price from cancelOrder');
-};
+};*/
 
 
-// --- UPDATING ---
-// Route to trigger stock price update
-router.post('/update-stock-prices', async (req, res) => {
-  const { ticker, updatedTime } = req.body;
-  console.log(`REQURST - TICKER: ${ticker}, UPDATED TIME: ${updatedTime}`);
-  try {
-    await orderMutex.acquire();
-    selectedStock = ticker; // Set the selected stock
-    console.log(`REQUEST - Updating stock price for ${ticker}`);
-    const updatedStockData = await updateStockPrices(ticker);
-    if (updatedStockData) {
-      res.status(200).send(`Stock prices for ${ticker} updated successfully`);
-    } else {
-      res.status(404).send(`No orders found for ${ticker}`);
-    }
-  } catch (error) {
-    console.error('Error updating stock prices:', error);
-    res.status(500).send('Error updating stock prices');
-  } finally {
-    selectedStock = null; // Reset the selected stock after updating
-    orderMutex.release();  // Release the mutex lock
-  }
-});
 
+
+/*
 const updateStockPrices = async (ticker) => {
-  timer.start('updateStockPrices');
-  const buyFile = path.resolve(__dirname, `../orders/${ticker}/buy.csv`);
-  const sellFile = path.resolve(__dirname, `../orders/${ticker}/sell.csv`);
-  const stockInfoFile = path.resolve(__dirname, '../stock_info.csv');
-  const sortedStockInfoFile = path.resolve(__dirname, '../sorted_stock_info.csv');
+  try {
+    timer.start('updateStockPrices');
+    const buyFile = path.resolve(__dirname, `../orders/${ticker}/buy.csv`);
+    const sellFile = path.resolve(__dirname, `../orders/${ticker}/sell.csv`);
+    const stockInfoFile = path.resolve(__dirname, '../stock_info.csv');
+    const sortedStockInfoFile = path.resolve(__dirname, '../sorted_stock_info.csv');
 
-  const [topBuyOrder, topSellOrder] = await Promise.all([
-    fs.existsSync(buyFile) ? readTopOrder(buyFile) : null,
-    fs.existsSync(sellFile) ? readTopOrder(sellFile) : null
-  ]);
+    const [topBuyOrder, topSellOrder] = await Promise.all([
+      fs.existsSync(buyFile) ? readTopOrder(buyFile) : null,
+      fs.existsSync(sellFile) ? readTopOrder(sellFile) : null
+    ]);
 
-  if (!topBuyOrder && !topSellOrder) {
-    console.log(`!No order price found for ${ticker}, setting price as '-' !`);
+    if (!topBuyOrder && !topSellOrder) {
+      console.log(`!No order price found for ${ticker}, setting price as '-' !`);
+    }
+
+    const stockInfoData = [];
+    const updatedTime = new Date().toISOString(); // Get current timestamp
+
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(stockInfoFile)
+        .pipe(csv())
+        .on('data', (row) => {
+          if (row.ticker === ticker) {
+            row.buyP = topSellOrder ? topSellOrder.price : '-';
+            row.sellP = topBuyOrder ? topBuyOrder.price : '-';
+            row.updated = updatedTime; // Add updated time
+          }
+          stockInfoData.push(row);
+        })
+        .on('end', () => {
+          const fields = ['ticker', 'buyP', 'sellP', 'type', 'updated'];
+          const opts = { fields };
+          const csvData = parse(stockInfoData, opts);
+          fs.writeFileSync(stockInfoFile, csvData);
+          console.log(`!Updated stock_info.csv with new prices for ${ticker} !`);
+          resolve();
+        })
+        .on('error', (error) => {
+          reject(error);
+        });
+    });
+
+    const updatedStockData = { 
+      ticker: ticker, 
+      buyP: topSellOrder ? topSellOrder.price : '-', 
+      sellP: topBuyOrder ? topBuyOrder.price : '-',
+      updated: updatedTime
+    };
+
+    // Broadcast updated stock data to all connected WebSocket clients
+    //const wss = getWebSocketServer(); // Get the WebSocket server instance
+    wss.broadcast({ type: 'update', data: updatedStockData });
+
+    // Call the function to update the sorted CSV file
+    updateSortedCsv(stockInfoFile, sortedStockInfoFile);
+
+    return updatedStockData;
+  } catch (error) {
+    console.error('Error function updating stock prices:', error);
+    throw error; // Throwing allows the calling function to handle the error and manage the mutex
+  } finally {
+    timer.stop('updateStockPrices');
   }
-
-  const stockInfoData = [];
-  const updatedTime = new Date().toISOString(); // Get current timestamp
-
-  await new Promise((resolve, reject) => {
-    fs.createReadStream(stockInfoFile)
-      .pipe(csv())
-      .on('data', (row) => {
-        if (row.ticker === ticker) {
-          row.buyP = topSellOrder ? topSellOrder.price : '-';
-          row.sellP = topBuyOrder ? topBuyOrder.price : '-';
-          row.updated = updatedTime; // Add updated time
-        }
-        stockInfoData.push(row);
-      })
-      .on('end', () => {
-        const fields = ['ticker', 'buyP', 'sellP', 'type', 'updated'];
-        const opts = { fields };
-        const csvData = parse(stockInfoData, opts);
-        fs.writeFileSync(stockInfoFile, csvData);
-        console.log(`!Updated stock_info.csv with new prices for ${ticker} !`);
-        resolve();
-      })
-      .on('error', (error) => {
-        reject(error);
-      });
-  });
-
-  const updatedStockData = { 
-    ticker: ticker, 
-    buyP: topSellOrder ? topSellOrder.price : '-', 
-    sellP: topBuyOrder ? topBuyOrder.price : '-',
-    updated: updatedTime
-  };
-
-  // Broadcast updated stock data to all connected WebSocket clients
-  const wss = getWebSocketServer(); // Get the WebSocket server instance
-  wss.broadcast({ type: 'update', data: updatedStockData });
-
-  // Call the function to update the sorted CSV file
-  updateSortedCsv(stockInfoFile, sortedStockInfoFile);
-
-  timer.stop('updateStockPrices');
-  return updatedStockData;
 };
 
 const updateSortedCsv = (sourceFilePath, sortedFilePath) => {
@@ -2415,7 +2482,8 @@ const updateAllStockPrices = async () => {
       await updateStockPrices(ticker);
     } catch (error) {
       console.error('Error updating stock prices:', error);
-      res.status(500).send('Error updating stock prices');
+      //res.status(500).send('Error updating stock prices');
+      throw error; // Throwing allows the calling function to handle the error and manage the mutex
     }
     
   };
@@ -2436,6 +2504,6 @@ const updateAllStockPrices = async () => {
 
 
 // Start the process of updating all stock prices
-updateAllStockPrices();
+updateAllStockPrices();*/
 
 module.exports = router;

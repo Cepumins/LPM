@@ -1,18 +1,1 @@
-[
-  {
-    "ticker": "TSLA",
-    "quantity": 2
-  },
-  {
-    "ticker": "LLY",
-    "quantity": 1
-  },
-  {
-    "ticker": "NVDA",
-    "quantity": 2
-  },
-  {
-    "ticker": "EUR",
-    "quantity": 200
-  }
-]
+[]

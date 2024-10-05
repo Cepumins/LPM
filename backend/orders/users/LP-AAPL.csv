@@ -1,3 +1,3 @@
-"stock","action","q","price","date"
-"AAPL","sell","1","1.12","2024-09-01T19:05:18.481Z"
-"AAPL","buy","1","0.96","2024-09-01T19:05:25.617Z"
+stock,action,q,price,date
+AAPL,buy,1,0.86,2024-10-05T09:41:15.525Z
+AAPL,sell,1,0.99,2024-10-05T09:41:24.968Z

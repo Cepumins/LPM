@@ -2,11 +2,12 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
-const { parse } = require('json2csv');
+//const { parse } = require('json2csv');
 const bcrypt = require('bcrypt');
 const router = express.Router();
 const { readCSV, writeCSV } = require('./csvUtils'); // Import the CSV utility functions
 const { addSession, removeSession, loadActiveSessions } = require('../users/activeSessions');
+const { accessFile, fileCache } = require('./cache'); // Import the CSV utility functions
 
 router.get('/test', (req, res) => {
   res.send('Test route is working');
@@ -14,25 +15,55 @@ router.get('/test', (req, res) => {
 
 // Get user details
 router.get('/details/:userId', async (req, res) => {
-  const userId = req.params.userId;
-  const users = await readCSV(path.resolve(__dirname, '../users/details.csv'));
-  const user = users.find(u => u.user_id === userId);
-  if (user) {
-    res.json(user);
-  } else {
-    res.status(404).json({ message: 'User not found' });
+  try {
+    const userId = req.params.userId;
+    // Use accessFile to load the users' details, leveraging the memory cache if available
+    const users = await accessFile(path.resolve(__dirname, '../users'), 'details.csv');
+    //const users = await readCSV(path.resolve(__dirname, '../users/details.csv'));
+    const user = users.find(u => u.user_id === userId);
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(404).json({ message: 'User not found' });
+    }
+  } catch (error) {
+    res.status(500).send(`Error fetching user details: ${error.message}`);
   }
 });
 
 // Get user inventory
+/*
 router.get('/inventory/:userId', (req, res) => {
-  const userId = req.params.userId;
-  const filePath = path.resolve(__dirname, `../users/inventory/${userId}.json`);
-  if (fs.existsSync(filePath)) {
-    const inventory = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    res.json(inventory);
-  } else {
-    res.json([]);
+  try {
+    const userId = req.params.userId;
+    const filePath = path.resolve(__dirname, `../users/inventory/${userId}.json`);
+    if (fs.existsSync(filePath)) {
+      const inventory = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      res.json(inventory);
+    } else {
+      res.json([]);
+    }
+  } catch (error) {
+    res.status(500).send(`Error fetching user inventory: ${error.message}`);
+  }
+});*/
+
+router.get('/inventory/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    // Use accessFile to read the inventory file (JSON format)
+    const inventory = await accessFile(path.resolve(__dirname, '../users/inventory'), `${userId}.json`);
+
+    // If inventory is found, parse and return it, otherwise return an empty array
+    if (inventory) {
+      //res.json(JSON.parse(inventory)); // Assuming the JSON data is stored as a string in the file
+      res.json(inventory);
+    } else {
+      res.json([]);
+    }
+  } catch (error) {
+    res.status(500).send(`Error fetching user inventory: ${error.message}`);
   }
 });
 
@@ -60,6 +91,7 @@ router.get('/orders/:userId', (req, res) => {
     });
 });
 
+/*
 // Update user inventory (buy stock)
 router.post('/inventory/:userId/buy', (req, res) => {
   const userId = req.params.userId;
@@ -106,7 +138,7 @@ router.post('/inventory/:userId/sell', (req, res) => {
   } else {
     res.status(400).json({ message: 'Stock not found in inventory' });
   }
-});
+});*/
 
 // User login
 router.post('/login', async (req, res) => {

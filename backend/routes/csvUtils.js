@@ -1,3 +1,4 @@
+// csvUtils.js
 const fs = require('fs');
 const csv = require('csv-parser');
 const { parse } = require('json2csv');
@@ -24,9 +25,26 @@ const writeCSV = async (filePath, data) => {
   const fields = Object.keys(data[0]);
   const csvData = parse(data, { fields });
   fs.writeFileSync(filePath, csvData);
+  console.log(`Data written to ${filePath}`);
+};
+
+// Load CSV data into memory
+const loadCSV = async (filePath) => {
+  const data = [];
+  const readStream = fs.createReadStream(filePath);
+  const rl = readline.createInterface({
+    input: readStream,
+    crlfDelay: Infinity,
+  });
+
+  for await (const line of rl) {
+    data.push(line);
+  }
+  return data;
 };
 
 module.exports = {
   readCSV,
-  writeCSV
+  writeCSV,
+  loadCSV
 };

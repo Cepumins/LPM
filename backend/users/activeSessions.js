@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const activeSessionsFilePath = path.resolve(__dirname, '../activeSessions.json');
+const activeSessionsFilePath = path.resolve(__dirname, '../users/activeSessions.json');
 
 // Load active sessions from file
 const loadActiveSessions = () => {
