@@ -138,17 +138,16 @@ const saveToDisk = async (filePath, saveType) => {
     if (fileCache[filePath]?.data) {
       if (false) {
         console.log(`${saveType === 'expiry' ? 'Expiring' : 'Backing up'} ${filePath} with data:`, fileCache[filePath].data);
-      };
+      }
       await fsp.writeFile(filePath, serializeFile(filePath, fileCache[filePath].data));
       console.log(`${saveType === 'expiry' ? 'Expired and saved' : 'Backed up'} ${filePath} to disk.`);
       
       if (saveType === 'expiry') {
         delete fileCache[filePath]; // Remove from memory on expiry
       } else {
-        // Reset modification flag after backup
-        fileCache[filePath].modified = false;
-        // Update the lastSaved time
-        fileCache[filePath].lastSaved = Date.now();
+        fileCache[filePath].modified = false; // Reset modification flag after backup
+        fileCache[filePath].lastSaved = Date.now(); // Update the lastSaved time
+        fileCache[filePath].backupScheduled = false; // Reset the backupScheduled flag after saving
       }
     }
   } catch (error) {
@@ -218,11 +217,10 @@ async function accessFile(directory, fileName, modifyCallback = null) {
       data,
       modified: false, // Initialize modified as false
       lastAccessed: Date.now(),
-      //expiryTimer: null,
       lastSaved: null,
+      expiryTimer: null,
       //lastBackup: null,
-      
-      backupScheduled: false, // Initialize flag to prevent multiple backups
+      backupScheduled: false // Initialize flag to prevent multiple backups
     };
   }
 
@@ -236,6 +234,7 @@ async function accessFile(directory, fileName, modifyCallback = null) {
       console.log(`Data after modification for ${filePath}:`, fileCache[filePath].data);
     };
 
+    /*
     // Check if enough time has passed since the last save to write immediately
     if (!fileCache[filePath].lastSaved || (Date.now() - fileCache[filePath].lastSaved > fileBackupTime + 100)) {
       saveToDisk(filePath, 'backup');
@@ -246,6 +245,13 @@ async function accessFile(directory, fileName, modifyCallback = null) {
         saveToDisk(filePath, 'backup');
         fileCache[filePath].backupScheduled = false; // Reset the backupScheduled flag after saving
       }, fileBackupTime);
+    }*/
+    if(!fileCache[filePath].backupScheduled && (Date.now() - fileCache[filePath].lastSaved > fileBackupTime)) {
+      fileCache[filePath].backupScheduled = true; // Mark backup as scheduled
+      setTimeout(() => {
+        saveToDisk(filePath, 'backup');
+        //fileCache[filePath].backupScheduled = false; // Reset the backupScheduled flag after saving
+      }, 250);
     }
   }
 

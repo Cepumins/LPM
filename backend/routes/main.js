@@ -145,26 +145,30 @@ async function calculatePrices (action, X, Y, virtualX, virtualY) {
   const roundPrices = async (price, direction) => {
     let roundedPrice;
     if (direction === 'up') {
-      roundedPrice = await roundUp(price, decimals);
+      roundedPrice = roundUp(price, decimals);
     } else if (direction === 'down') {
-      roundedPrice = await roundDown(price, decimals);
+      roundedPrice = roundDown(price, decimals);
     } else {
-      roundedPrice = await roundReg(price, decimals);
+      roundedPrice = roundReg(price, decimals);
     }
     return roundedPrice;
   };
 
+  /*
   X = parseInt(X);
   Y = parseFloat(Y);
   virtualX = parseFloat(virtualX);
   virtualY = parseFloat(virtualY);
 
-  console.log(`${action}`);
+  //console.log(`${action}`);
 
   const totalX = X + virtualX;
   const totalY = Y + virtualY;
-  //const totalX = parseInt(X) + parseFloat(virtualX);
-  //const totalY = parseFloat(Y) + parseFloat(virtualY);
+  */
+  const totalX = parseInt(X) + parseFloat(virtualX);
+  virtualY = parseFloat(virtualY);
+  Y = parseFloat(Y);
+  const totalY = Y + virtualY;
 
   let newTotalX;
   if (action === 'buy') {
@@ -408,7 +412,7 @@ const getNewPrices = async (stock, newX, newY) => {
   const y = parseFloat(newY);
   //console.log(`X: ${x}, Y: ${y}, Pa: ${Pa}, Pb: ${Pb}`);
   const L = await calculateL(Pa, Pb, x, y);
-  const roundedL = await roundReg(L, 2)
+  const roundedL = roundReg(L, 2)
   //console.log(`current L: ${L}`);
   //const price = y / x;
   const virtualX = L / Math.sqrt(Pb);
@@ -434,15 +438,15 @@ const getNewPrices = async (stock, newX, newY) => {
     buyPrice = '-';
   }
   */
-  let buyPrice = await roundDown(await calculatePrices('buy', x, y, virtualX, virtualY), 2);
+  let buyPrice = roundDown(await calculatePrices('buy', x, y, virtualX, virtualY), 2);
   if (y < buyPrice) {
     buyPrice = '-';
   }
   let sellPrice, price;
   if (x > 0) {
-    sellPrice = await roundUp(await calculatePrices('sell', x, y, virtualX, virtualY), 2);
+    sellPrice = roundUp(await calculatePrices('sell', x, y, virtualX, virtualY), 2);
     //await addOrder(ticker, 'sell', 1, sellPrice, `LP-${ticker}`, 'book');
-    price = await roundReg(y / x, 2);
+    price = roundReg(y / x, 2);
   } else {
     sellPrice = '-';
     price = 999999999.99;
@@ -873,7 +877,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
           newY = roundReg(oldY - price, 2);
         }
     
-        console.log(`giving getNewPrices ${stock}, ${newX}, ${newY}`);
+        console.log(`giving getNewPrices ${stock.ticker}, ${newX}, ${newY}`);
         const { buyPrice, sellPrice } = await getNewPrices(stock, newX, newY);
         const orderDelay = 10000;
 
@@ -1161,7 +1165,7 @@ const addOrder = async (ticker, action, quantity, price, userId, type) => {
     throw error; // Throwing allows the calling function to handle the error and manage the mutex
   } finally {
     timer.stop('addOrder');
-    //timer.reportAll();
+    timer.reportAll();
   }
 };
 
@@ -1485,7 +1489,7 @@ const updateStockPrices = async (ticker) => {
       return updatedStockInfo;
     });
 
-    // Log the stock_info.csv after modification
+    // Log the stock_info.csv after modifications
     if (false) {
       console.log(`After modification for ${ticker}:`);
       console.log(JSON.stringify(updatedStockInfo, null, 2));
@@ -1505,7 +1509,26 @@ const updateStockPrices = async (ticker) => {
     // Call the function to update the sorted CSV file
     //updateSortedCsv(stockInfoFile, sortedStockInfoFile);
     // Sort updated stock info by updatedTime and store it in sorted_stock_info.csv
-    const sortedStockInfo = [...updatedStockInfo].sort((a, b) => new Date(b.updated) - new Date(a.updated));
+    //const sortedStockInfo = [...updatedStockInfo].sort((a, b) => new Date(b.updated) - new Date(a.updated));
+    // Sort updated stock info by updatedTime and store it in sorted_stock_info.csv
+    const sortedStockInfo = [...updatedStockInfo].map(stock => {
+      const buyPrice = parseFloat(stock.buyP) || null;
+      const sellPrice = parseFloat(stock.sellP) || null;
+      
+      // Calculate midP as the average if both buyP and sellP are valid numbers
+      let midP;
+      if (buyPrice && sellPrice) {
+        midP = ((buyPrice + sellPrice) / 2).toFixed(2);
+      } else if (buyPrice) {
+        midP = buyPrice.toFixed(2);  // If only buyP is valid
+      } else if (sellPrice) {
+        midP = sellPrice.toFixed(2); // If only sellP is valid
+      } else {
+        midP = "-";  // If neither is valid
+      }
+      
+      return { ...stock, midP };
+    }).sort((a, b) => new Date(b.updated) - new Date(a.updated));
 
     // Use accessFile to save sorted stock info in sorted_stock_info.csv
     await accessFile(path.resolve(__dirname, '../'), 'sorted_stock_info.csv', () => sortedStockInfo);

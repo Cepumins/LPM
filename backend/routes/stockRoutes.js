@@ -48,7 +48,7 @@ class Mutex {
 
   release(requestName = "unknown") {
     // Log the release of the current mutex holder
-    console.log(`-Mutex released by ${requestName}`);
+    //console.log(`-Mutex released by ${requestName}`);
 
     // Unlock the mutex
     this.locked = false;
@@ -63,7 +63,8 @@ class Mutex {
       nextAttempt();
       */
       const { attempt, requestName: nextRequestName } = this.queue.shift(); // Destructure queued attempt
-      console.log(`-Dequeuing next request: ${nextRequestName}`);
+      //console.log(`-Dequeuing next request: ${nextRequestName}`);
+      console.log(`-Mutex released by ${requestName}, dequeuing next request: ${nextRequestName}`);
       //this.currentHolder = requestName; // Set the new holder to the next queued request
       //console.log(`-Mutex released by previous holder, dequeuing next attempt for ${requestName}`); // Log when the mutex is released and next attempt is called
       //attempt(); // Try to acquire the mutex for the next request in queue
@@ -73,7 +74,8 @@ class Mutex {
       //console.log(`-MUT released by ${this.currentHolder}, no more queued attempts`); // Log when the mutex is released with no queued attempts
       //this.locked = false;
       //this.currentHolder = "unknown"; // Reset the current holder
-      console.log(`-Mutex fully released, no more queued attempts`);
+      //console.log(`-Mutex fully released, no more queued attempts`);
+      console.log(`-Mutex fully released by ${requestName}, no more queued attempts`);
     }
   }
 }
@@ -96,7 +98,8 @@ router.get('/', (req, res) => {
 });
 
 // Route to get stock_info.csv data
-router.get('/info', (req, res) => {
+router.get('/info', async (req, res) => {
+  /*
   const stockInfo = [];
 
   fs.createReadStream(path.resolve(__dirname, '../sorted_stock_info.csv'))
@@ -107,6 +110,16 @@ router.get('/info', (req, res) => {
     .on('end', () => {
       res.json(stockInfo);
     });
+  */
+  try {
+    // Use the accessFile function to read the sorted_stock_info.csv file
+    const sortedStockInfo = await accessFile(path.resolve(__dirname, '../'), 'sorted_stock_info.csv');
+    
+    // Send the data as JSON
+    res.json(sortedStockInfo);
+  } catch (error) {
+    res.status(500).send(`Error reading sorted_stock_info.csv data: ${error.message}`);
+    }
 });
 
 
@@ -115,6 +128,7 @@ router.get('/data', async (req, res) => {
     // Use the accessFile function to read the stocks.csv file from memory if available
     const stockData = await accessFile(path.resolve(__dirname, '../'), 'stocks.csv');
 
+    /*
     // Optionally process the data (if needed)
     const parsedData = stockData.map((row) => {
       return {
@@ -131,7 +145,8 @@ router.get('/data', async (req, res) => {
     });
 
     // Send the parsed data as JSON
-    res.json(parsedData);
+    res.json(parsedData);*/
+    res.json(stockData);
   } catch (error) {
     res.status(500).send(`Error reading stocks.csv data: ${error.message}`);
   }
@@ -252,9 +267,9 @@ router.post('/data/order', async (req, res) => {
   const requestName = `User ${userId} ${orderExecution} ${orderType} order for ${quantity} ${ticker} at $${price}`;
 
   try {
-    console.log("starting order request");
+    //console.log("starting order request");
     await orderMutex.acquire(requestName);  // Acquire the mutex lock with the request name
-    console.log("mutex lock acquired for order request")
+    //console.log("mutex lock acquired for order request")
     console.log(`User ${userId} creating ${orderExecution} ${orderType} order for ${ticker} of ${quantity} at price of ${price}..`);
     await addOrder(ticker, orderType, quantity, price, userId, orderExecution);
     
@@ -267,9 +282,9 @@ router.post('/data/order', async (req, res) => {
     console.error('Error creating order:', error);
     res.status(500).send('Error creating order');
   } finally {
-    console.log("ending order request");
+    //console.log("ending order request");
     orderMutex.release(requestName);  // Release the mutex lock
-    console.log("mutex lock released by order request")
+    //console.log("mutex lock released by order request")
     //timer.reportAll();
   }
 });

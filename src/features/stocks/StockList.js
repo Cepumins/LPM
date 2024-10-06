@@ -129,10 +129,11 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
     setSelectedStock(null);
   };
 
+  /*
   const refreshStock = (ticker) => {
     const updatedStock = stocks.find(s => s.ticker === ticker);
     setSelectedStock(updatedStock);
-  };
+  };*/
 
   const handleSortChange = (e) => {
     const newSortOption = e.target.value;
@@ -180,9 +181,11 @@ function StockList({ userId, userBalance, inventory, refreshUserData }) {
     } else if (option === 'alphabetical') {
       sortedStocks.sort((a, b) => a.ticker.localeCompare(b.ticker));
     } else if (option === 'cheapest') {
-      sortedStocks.sort((a, b) => sortFunction(a, b, 'buyP'));
+      //sortedStocks.sort((a, b) => sortFunction(a, b, 'buyP'));
+      sortedStocks.sort((a, b) => sortFunction(a, b, 'midP'));
     } else if (option === 'expensive') {
-      sortedStocks.sort((a, b) => sortFunction(a, b, 'sellP', false));
+      //sortedStocks.sort((a, b) => sortFunction(a, b, 'sellP', false));
+      sortedStocks.sort((a, b) => sortFunction(a, b, 'midP', false));
     }
   
     setStocks(sortedStocks);
