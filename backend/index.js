@@ -14,6 +14,7 @@ const sessionStore = new session.MemoryStore();
 
 app.use(cors({
   origin: 'http://localhost:3000', // Replace with your frontend URL
+  //origin: 'http://172.20.10.5:3000', 
   credentials: true
 }));
 app.use(express.json());
@@ -22,7 +23,8 @@ app.use(session({
   secret: 'your-secret-key', // Replace with your own secret key
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, httpOnly: true } // Ensure secure is false for local development
+  //cookie: { secure: false, httpOnly: true } // Ensure secure is false for local development
+  cookie: { secure: false, httpOnly: true, sameSite: 'lax' }
   //cookie: { secure: false } // Set to true if using HTTPS
 }));
 
@@ -46,3 +48,4 @@ app.use('/api/stocks', stockRoutes);
 app.use('/api/users', userRoutes);
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+//server.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));

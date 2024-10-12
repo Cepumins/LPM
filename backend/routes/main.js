@@ -26,7 +26,7 @@ const wss = getWebSocketServer(); // Get the WebSocket server instance
 // --- SUPPORT ---
 const decimals = 2;
 //const minTax = 0 //Math.pow(10, -decimals);
-const taxP = 0.01;
+const taxP = 0.00;
 const dividendP = 0;
 const sellRound = 'up';
 const buyRound = 'down';

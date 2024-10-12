@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
+// StockPopup.js
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './StockPopup.css';
 import CreateOrderPopup from './CreateOrderPopup';
 import ConfirmOrderPopup from './ConfirmOrderPopup';
@@ -19,6 +20,57 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
   const [canBuy, setCanBuy] = useState(false);
   const [hasStock, setHasStock] = useState(false);
 
+  const disableOrders = (orderType, orderExecution) => {
+    if (!userId) return true; // Disable if no userId
+  
+    if (orderType === 'buy') {
+      if (orderExecution === 'market') {
+        return !canBuy || stock.buyP === "-"; // Disable if cannot buy or no buy offers
+      } else if (orderExecution === 'book') {
+        //return !canBuy; // Only check if user can buy
+        return !(parseFloat(userBalance) > 0);
+      }
+    }
+  
+    if (orderType === 'sell') {
+      if (orderExecution === 'market') {
+        return !hasStock || stock.sellP === "-"; // Disable if no stock in inventory or no sell offers
+      } else if (orderExecution === 'book') {
+        return !hasStock; // Only check if user has stock in inventory
+      }
+    }
+  
+    return false; // Enable by default if no conditions are met
+  };
+
+  //const handleOverlayClick = (e) => {
+  const handleOverlayClick = useCallback((e) => {
+    if (!isCreateOrderOpen && !isConfirmOpen && popupRef.current && !popupRef.current.contains(e.target)) {
+      onClose();
+    }
+  }, [isCreateOrderOpen, isConfirmOpen, onClose]);
+
+  const handleEscKey = useCallback((e) => {
+    if (e.key === 'Escape') {
+      onClose();
+    }
+  }, [onClose]);
+
+  const checkUserBalance = useCallback(() => {
+    /*
+    //console.log('checking user balance');
+    const balance = parseFloat(userBalance);
+    //console.log(`user balance: ${balance}`);
+    const buyPrice = parseFloat(stock.buyP);
+    setCanBuy(balance >= buyPrice);*/
+    setCanBuy(parseFloat(userBalance) >= parseFloat(stock.buyP));
+  }, [userBalance, stock.buyP]);
+
+  const checkUserInventory = useCallback(() => {
+    const hasStock = inventory.some(item => item.ticker === stock.ticker && item.quantity > 0);
+    setHasStock(hasStock);
+  }, [inventory, stock.ticker]);
+
   useEffect(() => {
     document.addEventListener('mousedown', handleOverlayClick);
     document.addEventListener('keydown', handleEscKey); // Add keydown event listener
@@ -34,19 +86,12 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
       //document.removeEventListener('mousedown', handleCreateOrderOverlayClick);
       //document.removeEventListener('mousedown', handleConfirmOrderOverlayClick);
     };
-  }, [isCreateOrderOpen, isConfirmOpen]);
+  //}, [isCreateOrderOpen, isConfirmOpen]);
+  }, [handleOverlayClick, handleEscKey, isCreateOrderOpen, isConfirmOpen]); // Add these to the dependency array
 
-  const handleOverlayClick = (e) => {
-    if (!isCreateOrderOpen && !isConfirmOpen && popupRef.current && !popupRef.current.contains(e.target)) {
-      onClose();
-    }
-  };
 
-  const handleEscKey = (e) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
+
+
 
   useEffect(() => {
     setOrderDetails(stock); // Reset orderDetails when stock prop changes
@@ -68,11 +113,12 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
 
   useEffect(() => {
     checkUserBalance();
-  }, [userBalance, stock.buyP]);
+  //}, [userBalance, stock.buyP]);
+  }, [userBalance, stock.buyP, checkUserBalance]); // Add checkUserBalance as a dependency
 
   useEffect(() => {
     checkUserInventory();
-  }, [stock]);
+  }, [stock, checkUserInventory]);
   
   /*
   useEffect(() => {
@@ -219,24 +265,11 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
   };
   */
 
-  const checkUserBalance = () => {
-    //console.log('checking user balance');
-    const balance = parseFloat(userBalance);
-    //console.log(`user balance: ${balance}`);
-    const buyPrice = parseFloat(stock.buyP);
-    setCanBuy(balance >= buyPrice);
-  };
-
-  const checkUserInventory = () => {
-    //console.log('checking user inventory');
-    const hasStock = inventory.some(item => {
-      //console.log(`stock ${item.ticker} in inventory: ${item.quantity}`);
-      return item.ticker === stock.ticker && item.quantity > 0;
-    });
-    setHasStock(hasStock);
-  };
 
 
+
+
+  /*
   const hasStockInInventory = () => {
     console.log('checking users inventory again');
     //return inventory.some(item => item.ticker === stock.ticker && item.quantity > 0);
@@ -254,7 +287,7 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
     const canBuy = balance >= buyPrice;
     //console.log(`Checking if user can buy: userBalance (${userBalance}) >= stock.buyP (${stock.buyP}) => ${canBuy}`);
     return canBuy;
-  };
+  };*/
 
   return (
     <div className="stock-popup">
@@ -271,21 +304,37 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
             <div className="popup-actions">
               <button 
                 className="sell-button" 
-                onClick={handleSellAtPrice} 
-                disabled={!userId || !hasStock || stock.sellP === "-"}
+                onClick={handleSellAtPrice}
+                disabled={disableOrders('sell', 'market')}
+                //disabled={!userId || !hasStock || stock.sellP === "-"}
               >
                 {orderDetails.sellP === "-" ? "No Sell Offers" : `Sell at $${stock.sellP}`}
               </button>
               <button 
                 className="buy-button" 
-                onClick={handleBuyAtPrice} 
-                disabled={!userId || !canBuy || stock.buyP === "-"}
+                onClick={handleBuyAtPrice}
+                disabled={disableOrders('buy', 'market')}
+                //disabled={!userId || !canBuy || stock.buyP === "-"}
               >
                 {orderDetails.buyP === "-" ? "No Buy Offers" : `Buy at $${stock.buyP}`}
               </button>
               <div></div>
-              <button className="create-sell-order-button" onClick={() => openCreateOrderPopup('sell')} disabled={!userId || !hasStock}>Create Sell Order</button>
-              <button className="create-buy-order-button" onClick={() => openCreateOrderPopup('buy')} disabled={!userId}>Create Buy Order</button>
+              <button 
+                className="create-sell-order-button" 
+                onClick={() => openCreateOrderPopup('sell')} 
+                //disabled={!userId || !hasStock}
+                disabled={disableOrders('sell', 'book')}
+              >
+                Create Sell Order
+              </button>
+              <button 
+                className="create-buy-order-button" 
+                onClick={() => openCreateOrderPopup('buy')} 
+                //disabled={!userId}
+                disabled={disableOrders('buy', 'book')}
+              >
+                Create Buy Order
+              </button>
             </div>
           </div>
           <div className="stock-graph">
@@ -312,6 +361,8 @@ function StockPopup({ stock, onClose, userId, userBalance, inventory, refreshUse
           priceDetails={stock}
           onClose={closeConfirmPopup}
           orderExecution="market"
+          userBalance={userBalance} // Pass user's balance
+          inventory={inventory} // Pass user's inventory
           /*
           onConfirm={async () => {
             if (confirmDetails.orderType === 'buy') {

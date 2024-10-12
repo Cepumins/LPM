@@ -1,18 +1,1 @@
-[
-  {
-    "ticker": "GOOGL",
-    "quantity": 1
-  },
-  {
-    "ticker": "TSLA",
-    "quantity": 3
-  },
-  {
-    "ticker": "JPM",
-    "quantity": 5
-  },
-  {
-    "ticker": "EUR",
-    "quantity": 75
-  }
-]
+[]

@@ -23,7 +23,21 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
     } else {
       setMaxQuantity(null);
     }
-  }, [orderType, orderDetails.ticker, userInventory]);
+  //}, [orderType, orderDetails.ticker, userInventory]);
+  }, [orderType, orderDetails.ticker, orderDetails.price, userInventory]);
+  
+  const submitDisabled = 
+    !quantity || 
+    !price || 
+    orderType === '' || 
+    quantity === '' || 
+    price === '' || 
+    parseInt(quantity) <= 0 || 
+    parseInt(quantity) > maxOrderSize || 
+    parseFloat(price) <= 0 || 
+    //parseFloat(price) > userBalance ||
+    (orderType === 'buy' && parseInt(quantity * price) > userBalance) || // Check if quantity is greater than available stock
+    (orderType === 'sell' && parseInt(quantity) > maxQuantity); // Check if quantity is greater than available stock
 
   const handleQuantityChange = (e) => {
     let value = e.target.value;
@@ -133,6 +147,7 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
     };
   }, [onClose, ref, isConfirmOpen]);
 
+
   const closeConfirmPopup = () => {
     setIsConfirmOpen(false);
   };
@@ -182,9 +197,10 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
             </label>
           </div>
           <button 
-            className="submit-button" 
+            className={`submit-button ${submitDisabled ? 'disabled' : ''}`} 
             onClick={handleSubmit}
-            disabled={quantity === '' || price === '' || parseInt(quantity) <= 0 || parseInt(quantity) > maxOrderSize || parseFloat(price) <= 0}
+            //disabled={quantity === '' || price === '' || parseInt(quantity) <= 0 || parseInt(quantity) > maxOrderSize || parseFloat(price) <= 0}
+            disabled={submitDisabled}
           >
             Submit
           </button>
@@ -199,6 +215,8 @@ const CreateOrderPopup = forwardRef(({ orderType, orderDetails, onClose, userInv
           onConfirm={handleConfirmOrder}
           //createOrderPopupRef={ref}
           orderExecution='book'
+          userBalance={userBalance} // Pass user's balance
+          inventory={userInventory} // Pass user's inventory
           /*
           onConfirm={async () => {
             // Placeholder for onConfirm logic

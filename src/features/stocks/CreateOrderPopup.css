@@ -75,3 +75,10 @@
   font-weight: 700;
 }
 
+.submit-button.disabled {
+  background-color: #ccc; /* Light grey background */
+  color: #555; /* Darker grey text */
+  cursor: not-allowed; /* Change the cursor to indicate it's not clickable */
+  opacity: 0.6; /* Make it look slightly transparent */
+}
+
